@@ -210,6 +210,9 @@
     var pilotW = d.team ? 610 : 440;
     var widths = d.columns.map(function (c) { return c.role === 'pilot' ? pilotW : (ROLE_W[c.role] || 122); });
     var W = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
+    // узкие таблицы (2–3 колонки) расширяем до минимума, чтобы шапка помещалась
+    var MIN_W = 1100, pi = d.columns.map(function (c) { return c.role; }).indexOf('pilot');
+    if (W < MIN_W) { widths[pi >= 0 ? pi : widths.length - 1] += MIN_W - W; W = MIN_W; }
     var n = Math.max(1, d.rows.length);
     var avail = STAGE_H - TOP_MIN * 2 - HEAD_H - COLS_H;
     var rh = Math.max(28, Math.min(60, Math.floor(avail / n) - GAP));
@@ -316,9 +319,18 @@
   };
   TableGfx.prototype.out = function () {
     var q = this.root.querySelector.bind(this.root);
+    // строки быстро уходят вправо, затем шапка и колонки одним плавным движением стираются и гаснут
+    var n = this.root.querySelectorAll('.rows > *').length;
     this.rowsOut();
-    anim(q('.cols'), [{ opacity: 1 }, { opacity: 0 }], { duration: 250, delay: 150 });
-    return anim(q('.head'), [{ clipPath: 'inset(0 0 0 0%)' }, { clipPath: 'inset(0 0 0 100%)' }], { duration: 450, delay: 220, easing: EASE_IO });
+    var d = Math.min(120 + n * 22, 380);
+    anim(q('.cols'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(40px)' }], { duration: 300, delay: Math.max(0, d - 120), easing: 'ease-in' });
+    anim(q('.head .t1'), [{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: d, easing: 'linear' });
+    anim(q('.head .t2'), [{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: d, easing: 'linear' });
+    return anim(q('.head'), [
+      { clipPath: 'inset(-30px -40px -30px -40px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .5 },
+      { clipPath: 'inset(-30px -40px -30px 100%)', opacity: 0, transform: 'translateX(30px)' }
+    ], { duration: 520, delay: d, easing: 'cubic-bezier(.45,0,.4,1)' });
   };
   TableGfx.prototype.update = function (d) {
     var self = this, old = this.data;
