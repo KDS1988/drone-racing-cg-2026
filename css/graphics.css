@@ -54,6 +54,7 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .start .txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
 .start .l1{font-family:var(--font-head);font-weight:900;font-size:42px;line-height:1.05;text-transform:uppercase;white-space:nowrap;transform:skewX(-8deg);transform-origin:left center}
 .start .l2{font-family:var(--font-head);font-weight:400;font-size:19px;letter-spacing:.34em;text-transform:uppercase;color:var(--ink-soft);margin-top:10px;white-space:nowrap}
+.start .edge{position:absolute;left:-4px;top:-10px;width:8px;height:830px;background:linear-gradient(180deg,transparent,#fff 15%,var(--blue) 50%,#fff 85%,transparent);box-shadow:0 0 24px 6px rgba(60,185,244,.85);opacity:0;pointer-events:none}
 .start .sweep{position:absolute;top:0;bottom:0;width:260px;left:-300px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);transform:skewX(var(--skew));pointer-events:none}
 
 /* ------------------------------------------------------------------ */

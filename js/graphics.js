@@ -20,11 +20,21 @@
   /* ---------- утилиты ---------- */
   function h(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  var BAG = null; // сюда собираются анимации появления, чтобы их можно было прервать
   function anim(el, kf, o) {
     if (!el) return Promise.resolve();
     var a = el.animate(kf, Object.assign({ fill: 'both', easing: 'cubic-bezier(.2,.8,.2,1)' }, o));
+    if (BAG) BAG.push(a);
     return a.finished.catch(function () {});
   }
+  /** запустить in() с записью анимаций */
+  function runIn(g) { BAG = g._inAnims = []; var p; try { p = g.in(); } finally { BAG = null; } return p; }
+  /** мгновенно довести незавершённое появление до конца (перед уходом) */
+  function finishIn(g) {
+    (g._inAnims || []).forEach(function (a) { try { if (a.playState !== 'finished') a.finish(); } catch (e) {} });
+    g._inAnims = [];
+  }
+  function playOut(g) { finishIn(g); return g.out(); }
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   var EASE_IO = 'cubic-bezier(.75,0,.2,1)';
   function isCaps(w) { return w.length > 1 && w === w.toLocaleUpperCase('ru-RU') && /[А-ЯЁA-Z]/.test(w); }
@@ -58,7 +68,7 @@
     this.root.innerHTML =
       '<div class="frame"><div class="kv"></div>' +
       '<div class="plate"><div class="tag"></div><div class="txt"><div class="l1"></div><div class="l2"></div></div></div>' +
-      '<div class="sweep"></div></div>';
+      '<div class="sweep"></div></div><div class="edge"></div>';
     parent.appendChild(this.root);
     this.set(item.data);
   }
@@ -76,6 +86,7 @@
   StartGfx.prototype.in = function () {
     var q = this.root.querySelector.bind(this.root);
     anim(q('.frame'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 750, easing: EASE_IO });
+    anim(q('.edge'), [{ transform: 'translateX(0) skewX(-14deg)', opacity: 1 }, { opacity: 1, offset: .85 }, { transform: 'translateX(1440px) skewX(-14deg)', opacity: 0 }], { duration: 750, easing: EASE_IO });
     anim(q('.kv'), [{ transform: 'scale(1.14)' }, { transform: 'scale(1)' }], { duration: 1600 });
     anim(q('.plate'), [{ transform: 'translateY(115px)' }, { transform: 'translateY(0)' }], { duration: 500, delay: 450 });
     anim(q('.tag'), [{ transform: 'translateX(-60px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 400, delay: 700 });
@@ -88,8 +99,15 @@
   };
   StartGfx.prototype.out = function () {
     var q = this.root.querySelector.bind(this.root);
-    anim(q('.plate'), [{ transform: 'translateY(0)' }, { transform: 'translateY(115px)' }], { duration: 300, easing: 'ease-in' });
-    return anim(q('.frame'), [{ clipPath: 'inset(0 0 0 0%)' }, { clipPath: 'inset(0 0 0 100%)' }], { duration: 550, delay: 150, easing: EASE_IO });
+    var EOUT = 'cubic-bezier(.55,0,.25,1)';
+    // текст уходит первым
+    anim(q('.l1'), [{ opacity: 1, transform: 'skewX(-8deg) translateX(0)' }, { opacity: 0, transform: 'skewX(-8deg) translateX(60px)' }], { duration: 220, easing: 'ease-in' });
+    anim(q('.l2'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(60px)' }], { duration: 220, delay: 30, easing: 'ease-in' });
+    anim(q('.tag'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(-40px)' }], { duration: 200, easing: 'ease-in' });
+    // вся заглушка (картинка + плашка) стирается слева направо со светящейся кромкой
+    anim(q('.kv'), [{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }], { duration: 700, delay: 80, easing: 'ease-in' });
+    anim(q('.edge'), [{ transform: 'translateX(0) skewX(-14deg)', opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 1, offset: .9 }, { transform: 'translateX(1440px) skewX(-14deg)', opacity: 0 }], { duration: 620, delay: 120, easing: EOUT });
+    return anim(q('.frame'), [{ clipPath: 'inset(0 0 0 0%)' }, { clipPath: 'inset(0 0 0 100%)' }], { duration: 620, delay: 120, easing: EOUT });
   };
   StartGfx.prototype.destroy = function () { this.root.remove(); };
 
@@ -363,7 +381,7 @@
     if (!item) {
       if (!cur) return Promise.resolve();
       this.cur = null;
-      return cur.out().then(function () { cur.destroy(); });
+      return playOut(cur).then(function () { cur.destroy(); });
     }
     var same = cur && cur.key === item.key && cur.type === item.type && cur.take === item.take;
     if (same) {
@@ -371,14 +389,15 @@
       cur.lastData = item.data;
       return cur.update(item.data);
     }
-    var pre = cur ? cur.out().then(function () { cur.destroy(); }) : Promise.resolve();
+    var pre = cur ? playOut(cur).then(function () { cur.destroy(); }) : Promise.resolve();
     return pre.then(function () {
       var T = TYPES[item.type];
       if (!T) { self.cur = null; return; }
       var g = new T(self.el, item);
       g.key = item.key; g.type = item.type; g.take = item.take; g.lastData = item.data;
       self.cur = g;
-      return fontsReady.then(function () { return g.in(); });
+      // появление не блокирует очередь: OUT можно нажать сразу, не дожидаясь конца анимации
+      return fontsReady.then(function () { runIn(g); });
     });
   };
 
