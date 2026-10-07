@@ -376,7 +376,19 @@
     var item = this.pending; this.pending = undefined; this.busy = true;
     this._apply(item).catch(function (e) { console.error(e); }).then(function () { self._run(); });
   };
+  function sanitize(item) {
+    if (!item) return item;
+    item.data = item.data || {};
+    if (item.type === 'table') {
+      var d = item.data;
+      d.columns = d.columns || []; d.rows = d.rows || [];
+      d.rows.forEach(function (r) { r.cells = r.cells || {}; r.hl = r.hl || 0; });
+      d.page = d.page || 0; d.pages = d.pages || 1;
+    }
+    return item;
+  }
   Layer.prototype._apply = function (item) {
+    item = sanitize(item);
     var self = this, cur = this.cur;
     if (!item) {
       if (!cur) return Promise.resolve();

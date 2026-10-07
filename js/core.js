@@ -298,13 +298,33 @@
   /* ------------------------------------------------------------------ */
   /* Шина синхронизации: сервер (SSE) или BroadcastChannel               */
   /* ------------------------------------------------------------------ */
-  function Bus(onState, onStatus) {
+  function normFbUrl(u) {
+    u = String(u || '').trim().replace(/\/+$/, '');
+    if (!u) return '';
+    if (!/^https?:\/\//.test(u)) u = 'https://' + u;
+    return u;
+  }
+  function normRoom(r) { return String(r || '').trim().replace(/[^\w-]/g, '').slice(0, 64); }
+  function qsParam(name) {
+    if (typeof location === 'undefined') return '';
+    var m = new RegExp('[?&]' + name + '=([^&#]*)').exec(location.search);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  /**
+   * opts: { fb: 'https://…firebasedatabase.app', room: 'ключ' } — облачный режим (Firebase Realtime DB, REST+SSE).
+   * Без opts: параметры ?fb=…&room=… из адреса страницы; иначе локальный server.js; иначе BroadcastChannel.
+   */
+  function Bus(onState, onStatus, opts) {
     this.onState = onState || function () {};
     this.onStatus = onStatus || function () {};
     this.mode = null;
     this.lastRev = -1;
     var self = this;
-    var forced = (typeof location !== 'undefined' && /[?&]bus=(\w+)/.exec(location.search)) ? RegExp.$1 : null;
+    opts = opts || {};
+    var forced = qsParam('bus') || null;
+    var fb = normFbUrl(opts.fb || qsParam('fb')), room = normRoom(opts.room || qsParam('room'));
+    if (forced !== 'bc' && forced !== 'server' && fb && room) { this._firebase(fb, room); return; }
     var httpOk = typeof location !== 'undefined' && /^https?:$/.test(location.protocol);
     if (forced !== 'bc' && httpOk) {
       fetch('api/state', { cache: 'no-store' }).then(function (r) {
@@ -333,6 +353,40 @@
     };
     connect();
   };
+  Bus.prototype._firebase = function (fb, room) {
+    var self = this;
+    this.mode = 'firebase';
+    this.fbRef = fb + '/cg/' + encodeURIComponent(room) + '/state.json';
+    var es = null, retry = null;
+    var connect = function () {
+      try { if (es) es.close(); } catch (e) {}
+      es = new EventSource(self.fbRef);
+      self.es = es;
+      var onData = function (e) {
+        try {
+          var msg = JSON.parse(e.data);
+          if (!msg) return;
+          if (msg.path === '/') self._deliver(msg.data || { center: null, bottom: null });
+          else self._refetch();
+        } catch (er) {}
+      };
+      es.addEventListener('put', onData);
+      es.addEventListener('patch', onData);
+      es.addEventListener('keep-alive', function () { self.onStatus('firebase', true); });
+      es.addEventListener('cancel', function () { self.onStatus('firebase', false, 'доступ запрещён правилами базы'); });
+      es.onopen = function () { self.onStatus('firebase', true); };
+      es.onerror = function () {
+        self.onStatus('firebase', false);
+        if (es.readyState === 2) { clearTimeout(retry); retry = setTimeout(connect, 2000); }
+      };
+    };
+    connect();
+  };
+  Bus.prototype._refetch = function () {
+    var self = this;
+    fetch(this.fbRef, { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (st) { self._deliver(st || { center: null, bottom: null }); }).catch(function () {});
+  };
   Bus.prototype._bc = function () {
     var self = this;
     this.mode = 'local';
@@ -351,6 +405,12 @@
     this.onStatus('local', true);
   };
   Bus.prototype.send = function (st) {
+    if (this.mode === 'firebase') {
+      var self = this;
+      return fetch(this.fbRef, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) })
+        .then(function (r) { if (!r.ok) self.onStatus('firebase', false, 'запись запрещена (HTTP ' + r.status + ')'); return r.ok; })
+        .catch(function () { self.onStatus('firebase', false); return false; });
+    }
     if (this.mode === 'server') {
       return fetch('api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) })
         .then(function (r) { return r.ok; }).catch(function () { return false; });
@@ -368,6 +428,7 @@
     formatName: formatName,
     colRole: colRole,
     colorOf: colorOf,
+    normFbUrl: normFbUrl, normRoom: normRoom,
     norm: norm, low: low, upperRu: upperRu, cap: cap, isPlaceholder: isPlaceholder,
     Bus: Bus
   };

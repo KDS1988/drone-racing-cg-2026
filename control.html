@@ -39,7 +39,7 @@
       </div>
       <div class="mon">
         <div class="mhead"><b class="pgm">PROGRAM</b><span id="pgmName">—</span></div>
-        <div class="screen"><iframe id="pgmFrame" src="index.html?checker=1" title="Program"></iframe></div>
+        <div class="screen"><iframe id="pgmFrame" src="about:blank" title="Program"></iframe></div>
         <div class="onair">
           <div class="oa"><span>ЦЕНТР:</span><b id="oaCenter">—</b><button class="btn out" data-out="center">OUT</button></div>
           <div class="oa"><span>НИЗ:</span><b id="oaBottom">—</b><button class="btn out" data-out="bottom">OUT</button></div>
@@ -59,6 +59,19 @@
       <label>Опрос «горячего» листа, сек<input id="sPollA" type="number" min="1" max="60"></label>
       <label>Опрос остальных листов, сек<input id="sPollB" type="number" min="5" max="600"></label>
     </div>
+    <h3>Связь пульта с графикой</h3>
+    <div class="grid2">
+      <label>Режим<select id="sTransport">
+        <option value="auto">Локально: server.js на этом компьютере</option>
+        <option value="firebase">Облако: Firebase (для GitHub Pages)</option>
+      </select></label>
+      <label>Ключ комнаты<input id="sRoom" spellcheck="false"></label>
+    </div>
+    <label>Адрес Firebase Realtime Database<input id="sFbUrl" spellcheck="false" placeholder="https://…-default-rtdb.europe-west1.firebasedatabase.app"></label>
+    <label>Ссылка для vMix (Web Browser input, 1920×1080)
+      <div class="row" style="margin:0"><input id="sVmixUrl" readonly style="flex:1"><button class="btn" id="sCopy" type="button">Копировать</button></div></label>
+    <p class="hint">В облачном режиме пульт и графику можно открывать с GitHub Pages с любых компьютеров с интернетом. Ключ комнаты — секрет: без него к титрам не подключиться.</p>
+    <h3>Google-таблица</h3>
     <p class="hint">Таблица должна быть открыта по ссылке («Все, у кого есть ссылка — читатель»). gid — число после <code>#gid=</code> в адресе листа.</p>
     <h3>Резервная копия настроек пульта</h3>
     <p class="hint">Тексты титров, нижние подписи, ручные правки и настройки таблиц.</p>

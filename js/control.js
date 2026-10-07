@@ -38,6 +38,15 @@
   var saveTimer = null;
   function save() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }, 250); }
   var cfg = store.config;
+  if (!cfg.transport) cfg.transport = 'auto';
+  if (cfg.fbUrl == null) cfg.fbUrl = '';
+  if (!cfg.room) { cfg.room = 'cg-' + Math.random().toString(36).slice(2, 10); save(); }
+  function useFirebase() { return cfg.transport === 'firebase' && CG.normFbUrl(cfg.fbUrl) && CG.normRoom(cfg.room); }
+  function graphicsUrl() {
+    var base = location.href.replace(/[?#].*$/, '').replace(/control\.html$/, '');
+    if (useFirebase()) return base + '?fb=' + encodeURIComponent(CG.normFbUrl(cfg.fbUrl)) + '&room=' + encodeURIComponent(CG.normRoom(cfg.room));
+    return base;
+  }
 
   /* =================================================================== */
   /* Данные листов                                                       */
@@ -358,6 +367,7 @@
   function syncStatus(mode, ok) {
     var p = $('#pSync');
     if (mode === 'server') { p.className = 'pill ' + (ok ? 'ok' : 'bad'); p.textContent = ok ? 'СВЯЗЬ: СЕРВЕР' : 'СВЯЗЬ: НЕТ СЕРВЕРА'; p.title = 'Пульт и графика синхронизируются через server.js'; }
+    else if (mode === 'firebase') { p.className = 'pill ' + (ok ? 'ok' : 'bad'); p.textContent = ok ? 'СВЯЗЬ: FIREBASE' : 'СВЯЗЬ: FIREBASE ✕'; p.title = ok ? 'Облачная синхронизация, комната ' + cfg.room : ('Нет связи с Firebase' + (arguments[2] ? ': ' + arguments[2] : '')); }
     else { p.className = 'pill warn'; p.textContent = 'СВЯЗЬ: ЛОКАЛЬНО'; p.title = 'Без сервера: графика обновляется только в этом же браузере. Для vMix запустите node server.js'; }
   }
 
@@ -647,6 +657,8 @@
   $('#btnSettings').onclick = function () {
     $('#sSheetId').value = cfg.sheetId;
     $('#sPollA').value = cfg.pollActive; $('#sPollB').value = cfg.pollAll;
+    $('#sTransport').value = cfg.transport; $('#sFbUrl').value = cfg.fbUrl || ''; $('#sRoom').value = cfg.room || '';
+    $('#sVmixUrl').value = graphicsUrl();
     $('#sGids').innerHTML = cfg.sheets.map(function (s, i) {
       return '<label>gid листа «' + esc(s.name) + '»<input data-gid="' + i + '" value="' + esc(s.gid) + '"></label>';
     }).join('');
@@ -659,7 +671,27 @@
     cfg.pollActive = Math.max(1, +$('#sPollA').value || 3);
     cfg.pollAll = Math.max(5, +$('#sPollB').value || 30);
     $$('[data-gid]').forEach(function (inp) { cfg.sheets[+inp.dataset.gid].gid = inp.value.replace(/\D/g, ''); });
-    save(); modal.hidden = true; reloadAll();
+    var prevT = cfg.transport + '|' + cfg.fbUrl + '|' + cfg.room;
+    cfg.transport = $('#sTransport').value;
+    cfg.fbUrl = CG.normFbUrl($('#sFbUrl').value);
+    cfg.room = CG.normRoom($('#sRoom').value) || cfg.room;
+    if (cfg.transport === 'firebase' && !cfg.fbUrl) { toast('Укажите адрес Firebase', true); return; }
+    save(); modal.hidden = true;
+    if (prevT !== cfg.transport + '|' + cfg.fbUrl + '|' + cfg.room) { setTimeout(function () { location.reload(); }, 300); return; }
+    reloadAll();
+  };
+  ['#sTransport', '#sFbUrl', '#sRoom'].forEach(function (id) {
+    $(id).addEventListener('input', function () {
+      var keep = { t: cfg.transport, u: cfg.fbUrl, r: cfg.room };
+      cfg.transport = $('#sTransport').value; cfg.fbUrl = CG.normFbUrl($('#sFbUrl').value); cfg.room = CG.normRoom($('#sRoom').value) || keep.r;
+      $('#sVmixUrl').value = graphicsUrl();
+      cfg.transport = keep.t; cfg.fbUrl = keep.u; cfg.room = keep.r;
+    });
+  });
+  $('#sCopy').onclick = function () {
+    var inp = $('#sVmixUrl'); inp.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(inp.value) : Promise.reject()).then(function () { toast('Ссылка скопирована'); })
+      .catch(function () { document.execCommand('copy'); toast('Ссылка скопирована'); });
   };
   $('#sExport').onclick = function () {
     var blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
@@ -695,7 +727,9 @@
       state.center = st.center || null; state.bottom = st.bottom || null;
       renderList(); renderOnAir(); setupFlip();
     }
-  }, syncStatus);
+  }, syncStatus, useFirebase() ? { fb: CG.normFbUrl(cfg.fbUrl), room: CG.normRoom(cfg.room) } : null);
+  // монитор PROGRAM подключаем тем же способом, что и vMix
+  $('#pgmFrame').src = (useFirebase() ? graphicsUrl() + '&' : 'index.html?') + 'checker=1';
 
   renderList(); renderEditor(); renderOnAir();
   reloadAll();
