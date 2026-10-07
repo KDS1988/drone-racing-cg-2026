@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Пульт CG · Гонки дронов 2026</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/control.css">
+</head>
+<body>
+<header class="top">
+  <img class="tlogo" src="assets/logo.png" alt="">
+  <div class="ttl">ПУЛЬТ CG<small>Гонки дронов · Первенство России 2026</small></div>
+  <div class="pills">
+    <span class="pill" id="pSync" title="Связь с графикой">СВЯЗЬ: …</span>
+    <span class="pill" id="pData" title="Данные таблицы">ДАННЫЕ: …</span>
+    <span class="pill demo" id="pDemo" hidden>ДЕМО-ДАННЫЕ</span>
+  </div>
+  <div class="tact">
+    <select id="srcSel" title="Источник данных">
+      <option value="google">Google Таблица</option>
+      <option value="demo">Демо-данные (репетиция)</option>
+    </select>
+    <button class="btn" id="btnReload" title="Перечитать таблицу сейчас">⟳ Обновить</button>
+    <button class="btn" id="btnSettings">⚙ Настройки</button>
+    <button class="btn danger big" id="btnClear">СНЯТЬ ВСЁ</button>
+  </div>
+</header>
+
+<main class="main">
+  <aside class="list" id="list"></aside>
+
+  <section class="work">
+    <div class="monitors">
+      <div class="mon">
+        <div class="mhead"><b class="pvw">PREVIEW</b><span id="pvwName">—</span>
+          <button class="btn take" id="btnTake">IN ▶ В ЭФИР</button></div>
+        <div class="screen"><iframe id="pvwFrame" src="index.html?pvw=1&checker=1" title="Preview"></iframe></div>
+      </div>
+      <div class="mon">
+        <div class="mhead"><b class="pgm">PROGRAM</b><span id="pgmName">—</span></div>
+        <div class="screen"><iframe id="pgmFrame" src="index.html?checker=1" title="Program"></iframe></div>
+        <div class="onair">
+          <div class="oa"><span>ЦЕНТР:</span><b id="oaCenter">—</b><button class="btn out" data-out="center">OUT</button></div>
+          <div class="oa"><span>НИЗ:</span><b id="oaBottom">—</b><button class="btn out" data-out="bottom">OUT</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="editor" id="editor"></div>
+  </section>
+</main>
+
+<div class="modal" id="settings" hidden>
+  <div class="dlg">
+    <h2>Настройки</h2>
+    <label>ID Google-таблицы<input id="sSheetId" spellcheck="false"></label>
+    <div class="grid2" id="sGids"></div>
+    <div class="grid2">
+      <label>Опрос «горячего» листа, сек<input id="sPollA" type="number" min="1" max="60"></label>
+      <label>Опрос остальных листов, сек<input id="sPollB" type="number" min="5" max="600"></label>
+    </div>
+    <p class="hint">Таблица должна быть открыта по ссылке («Все, у кого есть ссылка — читатель»). gid — число после <code>#gid=</code> в адресе листа.</p>
+    <h3>Резервная копия настроек пульта</h3>
+    <p class="hint">Тексты титров, нижние подписи, ручные правки и настройки таблиц.</p>
+    <div class="row">
+      <button class="btn" id="sExport">Скачать .json</button>
+      <label class="btn file">Загрузить .json<input type="file" id="sImport" accept=".json,application/json" hidden></label>
+      <button class="btn danger" id="sReset">Сбросить всё</button>
+    </div>
+    <div class="row end"><button class="btn" id="sCancel">Отмена</button><button class="btn take" id="sSave">Сохранить</button></div>
+  </div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/control.js"></script>
+</body>
+</html>

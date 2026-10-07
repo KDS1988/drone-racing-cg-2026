@@ -1,0 +1,10 @@
+{
+  "name": "drone-racing-cg-2026",
+  "version": "1.0.0",
+  "description": "CG-пакет титров для трансляции Первенства России по гонкам дронов 2026 (vMix, Google Sheets)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "private": true
+}

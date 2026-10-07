@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Графика эфира · Гонки дронов 2026</title>
+<meta name="viewport" content="width=1920,height=1080">
+<link rel="preload" href="assets/logo.png" as="image">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/graphics.css">
+</head>
+<body>
+<!-- Слой графики 1920×1080 с прозрачным фоном: добавлять в vMix как Web Browser input -->
+<div id="stage">
+  <div class="layer" id="L-center"></div>
+  <div class="layer" id="L-bottom"></div>
+</div>
+<!-- прогрев шрифтов, чтобы первый вывод не «прыгал» -->
+<div style="position:absolute;left:-9999px;top:0;opacity:0">
+  <span style="font-family:Unbounded;font-weight:400">Ая</span><span style="font-family:Unbounded;font-weight:700">Ая</span><span style="font-family:Unbounded;font-weight:900">Ая</span>
+  <span style="font-family:'Exo 2';font-weight:500">Ая</span><span style="font-family:'Exo 2';font-weight:600">Ая</span><span style="font-family:'Exo 2';font-weight:700">Ая</span><span style="font-family:'Exo 2';font-weight:800">Ая</span>
+  <img src="assets/keyvisual.jpg" alt="">
+</div>
+<script src="js/core.js"></script>
+<script src="js/graphics.js"></script>
+</body>
+</html>
