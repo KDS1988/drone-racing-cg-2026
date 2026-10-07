@@ -14,6 +14,7 @@
   /* ------------------------------------------------------------------ */
   var DEFAULT_CONFIG = {
     sheetId: '1np8-5BWWoadGkBZ2pqfEHBzXOesoQN1hMA-1ylbv8Xo',
+    fbUrl: 'https://kds88-title-default-rtdb.europe-west1.firebasedatabase.app', // облачная синхронизация (Firebase RTDB)
     source: 'google',          // 'google' | 'demo'
     pollActive: 3,             // сек — опрос листа, который в эфире / в редакторе
     pollAll: 30,               // сек — фоновый опрос остальных листов

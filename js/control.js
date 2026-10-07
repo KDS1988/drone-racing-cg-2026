@@ -38,8 +38,9 @@
   var saveTimer = null;
   function save() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }, 250); }
   var cfg = store.config;
-  if (!cfg.transport) cfg.transport = 'auto';
-  if (cfg.fbUrl == null) cfg.fbUrl = '';
+  if (!cfg.fbUrl) cfg.fbUrl = CG.DEFAULT_CONFIG.fbUrl || '';
+  // на GitHub Pages сервера нет — по умолчанию облачный режим
+  if (!cfg.transport) cfg.transport = /github\.io$/.test(location.hostname) ? 'firebase' : 'auto';
   if (!cfg.room) { cfg.room = 'cg-' + Math.random().toString(36).slice(2, 10); save(); }
   function useFirebase() { return cfg.transport === 'firebase' && CG.normFbUrl(cfg.fbUrl) && CG.normRoom(cfg.room); }
   function graphicsUrl() {
