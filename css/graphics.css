@@ -2,7 +2,20 @@
    Гонки дронов · Первенство России 2026 — графика эфира (1920×1080, alpha)
    Палитра снята с ключевого визуала.
    ===================================================================== */
+/* ---------------------------------------------------------------------
+   НАСТРОЙКИ ДИЗАЙНА — меняйте значения здесь, остальное подстроится.
+   Цвета: #RRGGBB или rgba(R,G,B,прозрачность 0..1)
+   --------------------------------------------------------------------- */
 :root{
+  /* заголовки таблиц («КВАЛИФИКАЦИЯ», «ФИНАЛ»…) */
+  --title-color:#ffffff;              /* цвет надписи */
+  --title-shadow:#3cb9f4;             /* цветная «глитч»-тень под надписью */
+  --head-plate:rgba(2,13,35,.88);     /* тёмная плашка под заголовком; transparent — убрать */
+  --subtitle-color:#bfe4ff;           /* «КЛАСС 75 · ЛИЧНЫЙ ЗАЧЁТ…» */
+  /* плашки титров */
+  --plate:rgba(3,15,44,.90);          /* основной фон строк / подписей */
+  --plate-2:rgba(6,24,66,.90);        /* фон чётных строк таблицы */
+
   --blue:#3cb9f4;        /* голубой «ДРОНОВ» */
   --blue-deep:#1d6fe0;
   --red:#f95357;         /* красный «2026» */
@@ -10,9 +23,7 @@
   --white:#ffffff;
   --navy:#021737;
   --navy-0:#020d23;
-  --plate:rgba(3,15,44,.90);
-  --plate-2:rgba(6,24,66,.90);
-  --ink-soft:#bfe4ff;
+  --ink-soft:var(--subtitle-color);
   --skew:-14deg;
   --font-head:'Unbounded','Exo 2',Arial,sans-serif;
   --font-body:'Exo 2',Arial,sans-serif;
@@ -52,7 +63,7 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .start .tag{flex:none;font-family:var(--font-head);font-weight:900;font-size:22px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;padding:12px 26px;position:relative;z-index:0;color:#fff}
 .start .tag::before{content:'';position:absolute;inset:0;transform:skewX(var(--skew));background:var(--red);z-index:-1;box-shadow:0 0 24px rgba(249,83,87,.6)}
 .start .txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
-.start .l1{font-family:var(--font-head);font-weight:900;font-size:42px;line-height:1.05;text-transform:uppercase;white-space:nowrap;transform:skewX(-8deg);transform-origin:left center}
+.start .l1{color:var(--title-color);font-family:var(--font-head);font-weight:900;font-size:42px;line-height:1.05;text-transform:uppercase;white-space:nowrap;transform:skewX(-8deg);transform-origin:left center}
 .start .l2{font-family:var(--font-head);font-weight:400;font-size:19px;letter-spacing:.34em;text-transform:uppercase;color:var(--ink-soft);margin-top:10px;white-space:nowrap}
 .start .edge{position:absolute;left:-4px;top:-10px;width:8px;height:830px;background:linear-gradient(180deg,transparent,#fff 15%,var(--blue) 50%,#fff 85%,transparent);box-shadow:0 0 24px 6px rgba(60,185,244,.85);opacity:0;pointer-events:none}
 .start .sweep{position:absolute;top:0;bottom:0;width:260px;left:-300px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);transform:skewX(var(--skew));pointer-events:none}
@@ -64,10 +75,10 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .geo .ico{position:absolute;left:0;top:0;width:100px;height:100px;z-index:2;display:flex;align-items:center;justify-content:center}
 .geo .ico::before{content:'';position:absolute;inset:0;transform:skewX(var(--skew));background:linear-gradient(160deg,var(--blue) 0%,var(--blue-deep) 100%);box-shadow:0 0 28px rgba(60,185,244,.55)}
 .geo .ico svg{position:relative;width:46px;height:46px}
-.geo .body{position:absolute;left:92px;top:0;width:558px;height:100px;z-index:1;padding:0 30px 0 40px;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
-.geo .body::before{content:'';position:absolute;inset:0;left:-20px;transform:skewX(var(--skew));background:var(--plate);border-top:2px solid rgba(60,185,244,.65)}
+.geo .body{position:absolute;left:84px;top:0;width:566px;height:100px;z-index:1;padding:0 30px 0 48px;display:flex;flex-direction:column;justify-content:center}
+.geo .body::before{content:'';position:absolute;inset:0;left:-40px;transform:skewX(var(--skew));background:var(--plate);border-top:2px solid rgba(60,185,244,.65)}
 .geo .body::after{content:'';position:absolute;left:30px;bottom:0;width:120px;height:5px;background:var(--red);transform:skewX(var(--skew));box-shadow:0 0 14px rgba(249,83,87,.8)}
-.geo .city,.geo .date{position:relative;white-space:nowrap}
+.geo .city,.geo .date{position:relative;white-space:nowrap;overflow:hidden}
 .geo .city{font-family:var(--font-head);font-weight:700;font-size:32px;line-height:1.05;text-transform:uppercase}
 .geo .date{font-weight:600;font-size:22px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-top:6px}
 
@@ -78,10 +89,10 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .lower .brand{position:absolute;left:0;top:0;width:210px;height:120px;z-index:2;display:flex;align-items:center;justify-content:center}
 .lower .brand::before{content:'';position:absolute;inset:0;transform:skewX(var(--skew));background:linear-gradient(160deg,#07214f,#020d23);border:2px solid rgba(60,185,244,.6);box-shadow:0 0 30px rgba(60,185,244,.35)}
 .lower .brand img{position:relative;height:96px;width:auto}
-.lower .body{position:absolute;left:200px;top:0;width:1200px;height:120px;z-index:1;padding:0 50px 0 56px;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
-.lower .body::before{content:'';position:absolute;inset:0;left:-30px;transform:skewX(var(--skew));background:var(--plate);border-top:2px solid rgba(60,185,244,.65)}
+.lower .body{position:absolute;left:196px;top:0;width:1204px;height:120px;z-index:1;padding:0 50px 0 60px;display:flex;flex-direction:column;justify-content:center}
+.lower .body::before{content:'';position:absolute;inset:0;left:-50px;transform:skewX(var(--skew));background:var(--plate);border-top:2px solid rgba(60,185,244,.65)}
 .lower .body::after{content:'';position:absolute;right:40px;top:0;width:160px;height:6px;background:var(--red);transform:skewX(var(--skew));box-shadow:0 0 14px rgba(249,83,87,.8)}
-.lower .name,.lower .role{position:relative;white-space:nowrap}
+.lower .name,.lower .role{position:relative;white-space:nowrap;overflow:hidden}
 .lower .name{font-family:var(--font-head);font-weight:400;font-size:40px;line-height:1.1}
 .lower .name .sur{font-weight:900}
 .lower .role{font-weight:600;font-size:25px;color:var(--ink-soft);margin-top:8px;letter-spacing:.02em}
@@ -91,10 +102,11 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 /* Таблицы                                                             */
 /* ------------------------------------------------------------------ */
 .tbl{position:absolute;left:50%;top:60px}
-.tbl .head{position:relative;height:126px;display:flex;align-items:center;gap:26px;padding:0 10px 0 4px;margin-bottom:10px}
+.tbl .head{position:relative;z-index:0;height:126px;display:flex;align-items:center;gap:26px;padding:0 10px 0 4px;margin-bottom:10px}
+.tbl .head::before{content:'';position:absolute;left:150px;right:0;top:14px;bottom:4px;transform:skewX(var(--skew));background:var(--head-plate);z-index:-1}
 .tbl .head .logo{flex:none;height:120px;width:auto;filter:drop-shadow(0 0 14px rgba(60,185,244,.45))}
 .tbl .head .tt{flex:1;min-width:0;position:relative}
-.tbl .head .t1{font-family:var(--font-head);font-weight:900;font-size:46px;line-height:1.02;text-transform:uppercase;white-space:nowrap;transform:skewX(-8deg);transform-origin:left center}
+.tbl .head .t1{color:var(--title-color);text-shadow:-4px 3px 0 var(--title-shadow);font-family:var(--font-head);font-weight:900;font-size:46px;line-height:1.02;text-transform:uppercase;white-space:nowrap;transform:skewX(-8deg);transform-origin:left center}
 .tbl .head .t2{font-family:var(--font-head);font-weight:400;font-size:18px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink-soft);margin-top:12px;white-space:nowrap}
 .tbl .head .pg{flex:none;font-family:var(--font-head);font-weight:700;font-size:20px;color:var(--blue);padding:8px 18px;position:relative;z-index:0}
 .tbl .head .pg::before{content:'';position:absolute;inset:0;transform:skewX(var(--skew));border:2px solid var(--blue);z-index:-1}

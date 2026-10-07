@@ -35,6 +35,7 @@
     g._inAnims = [];
   }
   function playOut(g) { finishIn(g); return g.out(); }
+  function cssVar(n, d) { var v = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return v || d; }
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   var EASE_IO = 'cubic-bezier(.75,0,.2,1)';
   function isCaps(w) { return w.length > 1 && w === w.toLocaleUpperCase('ru-RU') && /[А-ЯЁA-Z]/.test(w); }
@@ -93,7 +94,7 @@
     anim(q('.l1'), [{ opacity: 0, transform: 'skewX(-8deg) translateX(-30px)', textShadow: '-14px 0 0 #3cb9f4, 14px 0 0 #f95357' },
       { opacity: 1, offset: .35, textShadow: '6px 0 0 #3cb9f4, -6px 0 0 #f95357' },
       { opacity: .6, offset: .55 },
-      { opacity: 1, transform: 'skewX(-8deg) translateX(0)', textShadow: '-4px 3px 0 #3cb9f4' }], { duration: 650, delay: 780 });
+      { opacity: 1, transform: 'skewX(-8deg) translateX(0)', textShadow: '-4px 3px 0 ' + cssVar('--title-shadow', '#3cb9f4') }], { duration: 650, delay: 780 });
     anim(q('.l2'), [{ opacity: 0, letterSpacing: '.8em' }, { opacity: 1, letterSpacing: '.34em' }], { duration: 600, delay: 900 });
     return anim(q('.sweep'), [{ left: '-300px' }, { left: '1500px' }], { duration: 900, delay: 900, easing: 'ease-in-out' });
   };
@@ -107,6 +108,7 @@
     // вся заглушка (картинка + плашка) стирается слева направо со светящейся кромкой
     anim(q('.kv'), [{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }], { duration: 700, delay: 80, easing: 'ease-in' });
     anim(q('.edge'), [{ transform: 'translateX(0) skewX(-14deg)', opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 1, offset: .9 }, { transform: 'translateX(1440px) skewX(-14deg)', opacity: 0 }], { duration: 620, delay: 120, easing: EOUT });
+    anim(q('.frame'), [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }], { duration: 620, delay: 120, easing: 'linear' });
     return anim(q('.frame'), [{ clipPath: 'inset(0 0 0 0%)' }, { clipPath: 'inset(0 0 0 100%)' }], { duration: 620, delay: 120, easing: EOUT });
   };
   StartGfx.prototype.destroy = function () { this.root.remove(); };
@@ -135,11 +137,15 @@
     return anim(q('.date'), [{ transform: 'translateY(20px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420, delay: 420 });
   };
   GeoGfx.prototype.out = function () {
+    // единое движение: текст гаснет, вся плашка схлопывается к иконке и растворяется — без пауз
     var q = this.root.querySelector.bind(this.root);
-    anim(q('.city'), [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-14px)' }], { duration: 200, easing: 'ease-in' });
-    anim(q('.date'), [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-10px)' }], { duration: 200, easing: 'ease-in' });
-    anim(q('.body'), [{ clipPath: 'inset(0 0 0 0)' }, { clipPath: 'inset(0 100% 0 0)' }], { duration: 380, delay: 120, easing: EASE_IO });
-    return anim(q('.ico'), [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(0)', opacity: 0 }], { duration: 260, delay: 380, easing: 'ease-in' });
+    anim(q('.city'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    anim(q('.date'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    return anim(this.root, [
+      { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .55 },
+      { clipPath: 'inset(-40px 100% -40px -60px)', opacity: 0, transform: 'translateX(-24px)' }
+    ], { duration: 480, easing: 'cubic-bezier(.45,0,.4,1)' });
   };
   GeoGfx.prototype.destroy = function () { this.root.remove(); };
 
@@ -171,11 +177,14 @@
   };
   LowerGfx.prototype.out = function () {
     var q = this.root.querySelector.bind(this.root);
-    anim(q('.name'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(40px)' }], { duration: 220, easing: 'ease-in' });
-    anim(q('.role'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(40px)' }], { duration: 220, easing: 'ease-in' });
-    anim(q('.bar'), [{ opacity: 1 }, { opacity: 0 }], { duration: 200 });
-    anim(q('.body'), [{ clipPath: 'inset(0 0 0 0)' }, { clipPath: 'inset(0 0 0 100%)' }], { duration: 420, delay: 120, easing: EASE_IO });
-    return anim(q('.brand'), [{ transform: 'scaleX(1)', opacity: 1 }, { transform: 'scaleX(0)', opacity: 0 }], { duration: 300, delay: 360, easing: 'ease-in' });
+    anim(q('.name'), [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'linear' });
+    anim(q('.role'), [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'linear' });
+    anim(q('.bar'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    return anim(this.root, [
+      { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .55 },
+      { clipPath: 'inset(-40px 100% -40px -60px)', opacity: 0, transform: 'translateX(-30px)' }
+    ], { duration: 560, easing: 'cubic-bezier(.45,0,.4,1)' });
   };
   LowerGfx.prototype.destroy = function () { this.root.remove(); };
 
@@ -301,7 +310,7 @@
     anim(q('.head'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 600, easing: EASE_IO });
     anim(q('.head .logo'), [{ opacity: 0, transform: 'scale(.6) rotate(-6deg)' }, { opacity: 1, transform: 'none' }], { duration: 520, delay: 120 });
     anim(q('.head .stripes'), [{ transform: 'translateX(-260px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 650, delay: 200 });
-    anim(q('.t1'), [{ opacity: 0, textShadow: '-16px 0 0 #3cb9f4, 16px 0 0 #f95357' }, { opacity: 1, offset: .4, textShadow: '6px 0 0 #3cb9f4, -6px 0 0 #f95357' }, { opacity: 1, textShadow: '-4px 3px 0 #3cb9f4' }], { duration: 600, delay: 250 });
+    anim(q('.t1'), [{ opacity: 0, textShadow: '-16px 0 0 #3cb9f4, 16px 0 0 #f95357' }, { opacity: 1, offset: .4, textShadow: '6px 0 0 #3cb9f4, -6px 0 0 #f95357' }, { opacity: 1, textShadow: '-4px 3px 0 ' + cssVar('--title-shadow', '#3cb9f4') }], { duration: 600, delay: 250 });
     anim(q('.cols'), [{ opacity: 0, transform: 'translateY(-12px)' }, { opacity: 1, transform: 'none' }], { duration: 350, delay: 300 });
     return this.rowsIn(380);
   };
