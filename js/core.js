@@ -279,15 +279,16 @@
   /* Цвета пилотов                                                       */
   /* ------------------------------------------------------------------ */
   var COLORS = {
-    'красный': '#ff3b47', 'red': '#ff3b47',
-    'синий': '#2f7dff', 'blue': '#2f7dff', 'голубой': '#3cb9f4',
-    'зеленый': '#2fe36b', 'green': '#2fe36b',
-    'желтый': '#ffd43b', 'yellow': '#ffd43b',
-    'оранжевый': '#ff8a2b', 'orange': '#ff8a2b',
-    'пурпурный': '#ff00ff', 'magenta': '#ff00ff',
-    'фиолетовый': '#a35bff', 'purple': '#a35bff',
-    'белый': '#ffffff', 'white': '#ffffff',
-    'розовый': '#ff5fb8', 'pink': '#ff5fb8'
+    '': '#ff3b47', 'red': '#ff3b47',
+    '': '#2f7dff', 'blue': '#2f7dff', 
+    '': '#3cb9f4',
+    '': '#2fe36b', 'green': '#2fe36b',
+    '': '#ffd43b', 'yellow': '#ffd43b',
+    '': '#ff8a2b', 'orange': '#ff8a2b',
+    '': '#ff00ff', 'magenta': '#ff00ff',
+    '': '#a35bff', 'purple': '#a35bff',
+    '': '#ffffff', 'white': '#ffffff',
+    '': '#ff5fb8', 'pink': '#ff5fb8'
   };
   function colorOf(v) {
     var k = low(v);
