@@ -31,10 +31,16 @@
   try { store = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { store = {}; }
   store = Object.assign(clone(DEFAULT_STORE), store);
   store.config = Object.assign(clone(CG.DEFAULT_CONFIG), store.config || {});
-  // если в сохранённом конфиге нет листа из дефолта — добавим
+  // переход на полный каталог листов (75 / 200 / 330 / ТС)
+  if (store.config.sheetsVersion !== CG.DEFAULT_CONFIG.sheetsVersion || !Array.isArray(store.config.sheets)) {
+    store.config.sheets = clone(CG.DEFAULT_CONFIG.sheets);
+    store.config.sheetsVersion = CG.DEFAULT_CONFIG.sheetsVersion;
+    store.tables = {};
+  }
   CG.DEFAULT_CONFIG.sheets.forEach(function (d) {
     if (!store.config.sheets.some(function (s) { return s.key === d.key; })) store.config.sheets.push(clone(d));
   });
+  if (!store.collapsed) store.collapsed = {};
   var saveTimer = null;
   function save() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }, 250); }
   var cfg = store.config;
@@ -53,6 +59,8 @@
   /* Данные листов                                                       */
   /* =================================================================== */
   var DATA = {};  // key → { parsed, at, err, hash, busy, last }
+  /** листы, которые показываются в пульте (включены в настройках; в демо — только те, для которых есть демо-файл) */
+  function activeSheets() { return cfg.sheets.filter(function (s) { return s.on !== false && CG.sheetCsvUrl(cfg, s); }); }
   cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
   function sheetByKey(k) { return cfg.sheets.filter(function (s) { return s.key === k; })[0]; }
 
@@ -73,6 +81,7 @@
     if (d.busy) return Promise.resolve();
     d.busy = true; d.last = Date.now();
     var url = CG.sheetCsvUrl(cfg, s);
+    if (!url) { d.busy = false; return Promise.resolve(); }
     var p = fetchText(url).catch(function (e) {
       if (cfg.source === 'google' && bus && bus.mode === 'server') {
         return fetchText('api/sheet?id=' + encodeURIComponent(cfg.sheetId) + '&gid=' + encodeURIComponent(s.gid));
@@ -99,22 +108,29 @@
   }
   function pollTick() {
     var now = Date.now(), hot = hotSheets();
-    cfg.sheets.forEach(function (s) {
+    activeSheets().forEach(function (s) {
       var d = DATA[s.key];
       var iv = (hot[s.key] ? cfg.pollActive : cfg.pollAll) * 1000;
       if (!d.busy && now - d.last >= iv) loadSheet(s);
     });
   }
-  function reloadAll() { cfg.sheets.forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); }); }
+  function reloadAll() { activeSheets().forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); }); }
 
   /* =================================================================== */
   /* Каталог титров                                                      */
   /* =================================================================== */
+  /** «Класс 330 · Личный зачёт · Юниоры» — берётся из самого листа (строка «КЛАСС 330 ЛИЧНЫЙ ЗАЧЁТ») */
   function sheetSubtitle(s) {
-    var p = DATA[s.key].parsed;
-    var cat = (p && p.category) || s.cat;
-    return [s.cls, s.comp, cat].filter(Boolean).join(' · ');
+    var p = DATA[s.key] && DATA[s.key].parsed;
+    return [(p && p.cls) || s.cls, (p && p.comp) || s.comp, (p && p.category) || s.cat].filter(Boolean).join(' · ');
   }
+  /** «330 ЛЗ М» */
+  function sheetShort(s) { var p = DATA[s.key] && DATA[s.key].parsed; return (p && p.short) || s.name; }
+  function sheetGroupTitle(s) {
+    var p = DATA[s.key] && DATA[s.key].parsed;
+    return sheetShort(s) + ' · ' + ((p && p.comp) || s.comp) + ' · ' + ((p && p.category) || s.cat);
+  }
+  function pilotsIn(b) { return b.rows.filter(function (r) { return r.pilotsRaw.length; }).length; }
   function catalog() {
     var items = [
       { id: 'start', type: 'start', layer: 'center', label: 'Стартовый титр', group: 'common' },
@@ -123,14 +139,19 @@
     store.lowers.forEach(function (l, i) {
       items.push({ id: 'lower:' + i, type: 'lower', layer: 'bottom', label: 'Подпись: ' + (l.name || '—'), group: 'lowers', idx: i });
     });
-    cfg.sheets.forEach(function (s) {
+    activeSheets().forEach(function (s) {
       var p = DATA[s.key].parsed;
-      items.push({ id: 'q:' + s.key, type: 'table', layer: 'center', sheet: s.key, kind: 'quali', label: 'Квалификация', group: s.key,
-        count: p && p.quali ? p.quali.items.length : null });
-      if (p) p.blocks.forEach(function (b) {
+      if (!p) return;
+      // пустые таблицы (нет ни одного пилота) в пульт не попадают
+      if (p.quali && p.quali.items.length) {
+        items.push({ id: 'q:' + s.key, type: 'table', layer: 'center', sheet: s.key, kind: 'quali', label: 'Общая таблица', group: s.key,
+          count: p.quali.items.length });
+      }
+      p.blocks.forEach(function (b) {
+        var n = pilotsIn(b);
+        if (!n) return;
         items.push({ id: 'b:' + s.key + ':' + b.id, type: 'table', layer: 'center', sheet: s.key, kind: 'block', blockId: b.id,
-          label: CG.cap(b.label.toLowerCase()).replace(/группа/g, 'Группа').replace(/итог/, 'Итог'), group: s.key,
-          count: b.rows.filter(function (r) { return r.pilotsRaw.length; }).length });
+          label: CG.cap(b.label.toLowerCase()).replace(/группа/g, 'Группа').replace(/итог/, 'Итог'), group: s.key, count: n });
       });
     });
     return items;
@@ -163,7 +184,7 @@
   function rawTable(item) {
     var s = sheetByKey(item.sheet), p = DATA[item.sheet] && DATA[item.sheet].parsed;
     if (!s || !p) return null;
-    var known = p.known, team = s.mode === 'team';
+    var known = p.known, team = p.mode === 'team';
     if (item.kind === 'quali') {
       var has = (p.quali && p.quali.has) || {};
       var cols = [{ key: 'idx', label: '№', role: 'idx' }];
@@ -179,13 +200,13 @@
           idx: it.idx, rating: it.rating, pilot: it.pilotsRaw.map(function (x) { return CG.formatName(x, known); }).join(' | '),
           okrug: it.okrug, laps: it.laps, time: it.time, placeQ: it.placeQ, placeG: it.placeG } };
       });
-      return { columns: cols, rows: rows, title: 'Квалификация', defaultHidden: {}, team: team };
+      return { columns: cols, rows: rows, title: 'Общая таблица', defaultHidden: {}, team: team };
     }
     var b = p.blocks.filter(function (x) { return x.id === item.blockId; })[0];
     if (!b) return null;
     var defHidden = {};
     var bcols = b.columns.map(function (c) {
-      var label = CG.low(c.label) === 'фио' ? (team ? 'Пилоты' : 'Пилот') : c.label;
+      var label = c.role === 'pilot' ? (team ? 'Пилоты' : 'Пилот') : CG.cap(c.label);
       if (c.role === 'channel' && !(team && b.stage === 'Финал')) defHidden[c.key] = 1;
       return { key: c.key, label: label, role: c.role };
     });
@@ -198,6 +219,13 @@
     return { columns: bcols, rows: brows, title: b.label, defaultHidden: defHidden, team: team, block: b };
   }
 
+  var ZERO_RE = /^0+([.,:]0+)*$/;
+  function displayVal(col, v) {
+    v = v == null ? '' : String(v).trim();
+    if (CG.isPlaceholder(v)) return '';
+    if ((col.role === 'time' || col.role === 'total' || col.role === 'laps' || col.role === 'score') && ZERO_RE.test(v)) return '';
+    return v;
+  }
   function sortVal(v) {
     v = String(v == null ? '' : v).trim().replace(',', '.');
     if (!v) return Infinity;
@@ -212,17 +240,24 @@
     var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet);
     if (!raw || !s) return null;
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
-    var cols = raw.columns.filter(function (c) { return !hiddenCols[c.key]; });
     var pilotKey = (raw.columns.filter(function (c) { return c.role === 'pilot'; })[0] || {}).key;
     var placeKeys = raw.columns.filter(function (c) { return CG.low(c.label) === 'место'; }).map(function (c) { return c.key; });
     var rows = raw.rows.map(function (r) {
       var cells = Object.assign({}, r.cells), o = t.ovr[r.id] || {};
+      // «х», ошибки и нулевые заготовки формул («0», «0,00») в эфир не выводим
+      raw.columns.forEach(function (c) { if (!Object.prototype.hasOwnProperty.call(o, c.key)) cells[c.key] = displayVal(c, cells[c.key]); });
       Object.keys(o).forEach(function (k) { cells[k] = o[k]; });
       return { id: r.id, cells: cells, hasPilot: r.hasPilot !== false || !!(o[pilotKey]) };
     }).filter(function (r) {
       if (t.hiddenRows[r.id]) return false;
-      if (item.kind === 'block' && t.hideEmpty && !(r.cells[pilotKey] || '').trim()) return false;
+      if (t.hideEmpty && !(r.cells[pilotKey] || '').trim()) return false;
       return true;
+    });
+    // пустые колонки (ни одного значения) скрываем, пилот остаётся всегда
+    var cols = raw.columns.filter(function (c) {
+      if (hiddenCols[c.key]) return false;
+      if (t.hideEmptyCols === false || c.role === 'pilot') return true;
+      return rows.some(function (r) { return String(r.cells[c.key] == null ? '' : r.cells[c.key]).trim() !== ''; });
     });
     if (t.sort) {
       rows = rows.map(function (r, i) { return { r: r, i: i }; }).sort(function (a, b) {
@@ -243,7 +278,7 @@
       return { id: r.id, cells: cells, hl: r.hl || 0 };
     });
     return {
-      title: t.title != null && t.title !== '' ? t.title : (item.kind === 'quali' ? 'Квалификация' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
+      title: t.title != null && t.title !== '' ? t.title : (item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
       subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : sheetSubtitle(s),
       team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages
     };
@@ -272,7 +307,7 @@
   }
   function itemLabel(item) {
     if (!item) return '';
-    if (item.type === 'table') { var s = sheetByKey(item.sheet); return (s ? s.name + ' · ' : '') + item.label; }
+    if (item.type === 'table') { var s = sheetByKey(item.sheet); return (s ? sheetShort(s) + ' · ' : '') + item.label; }
     return item.label;
   }
   function sendState() {
@@ -345,7 +380,7 @@
   /* =================================================================== */
   function renderStatus() {
     var errs = [], newest = 0, loaded = 0;
-    cfg.sheets.forEach(function (s) {
+    activeSheets().forEach(function (s) {
       var d = DATA[s.key];
       if (d.err) errs.push(s.name + ': ' + d.err);
       if (d.parsed) loaded++;
@@ -378,14 +413,18 @@
   function renderList() {
     ITEMS = catalog();
     var html = '';
-    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(cfg.sheets.map(function (s) {
-      return { k: s.key, t: s.name + ' · ' + (s.comp || '') + ' · ' + ((DATA[s.key].parsed && DATA[s.key].parsed.category) || s.cat), sheet: true };
+    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(activeSheets().map(function (s) {
+      return { k: s.key, t: sheetGroupTitle(s), sheet: true };
     }));
     groups.forEach(function (g) {
       var its = ITEMS.filter(function (i) { return i.group === g.k; });
-      html += '<div class="grp"><h4>' + esc(g.t) + (g.sheet ? '<span class="st" data-k="' + g.k + '">…</span>' : '') + '</h4>';
+      var collapsed = !!store.collapsed[g.k];
+      var hasAir = its.some(function (i) { return isOnAir(i.id); });
+      html += '<div class="grp' + (collapsed ? ' collapsed' : '') + '"><h4 data-grp="' + g.k + '"><i class="tw">' + (collapsed ? '▸' : '▾') + '</i>' +
+        esc(g.t) + (hasAir ? ' <b class="airdot">●</b>' : '') + (g.sheet ? '<span class="st" data-k="' + g.k + '">…</span>' : '') + '</h4>';
+      if (collapsed) { html += '</div>'; return; }
       if (g.k === 'lowers' && !its.length) html += '<div class="hint">Добавьте подписи в редакторе</div>';
-      if (g.sheet && its.length === 1 && !DATA[g.k].parsed) html += '';
+      if (g.sheet && !its.length) html += '<div class="hint">' + (DATA[g.k].parsed ? 'Пока нет заполненных таблиц' : 'загрузка…') + '</div>';
       its.forEach(function (it) {
         var air = isOnAir(it.id);
         html += '<div class="item' + (store.selected === it.id ? ' sel' : '') + (air ? ' air' : '') + '" data-id="' + esc(it.id) + '">' +
@@ -399,6 +438,8 @@
     renderStatus();
   }
   $('#list').addEventListener('click', function (e) {
+    var gh = e.target.closest('[data-grp]');
+    if (gh) { var k = gh.dataset.grp; store.collapsed[k] = !store.collapsed[k]; save(); renderList(); return; }
     var tg = e.target.closest('[data-toggle]');
     if (tg) { e.stopPropagation(); toggle(tg.dataset.toggle); return; }
     var it = e.target.closest('.item'); if (!it) return;
@@ -515,7 +556,7 @@
   function renderTableEditor(ed, item) {
     var s = sheetByKey(item.sheet), d = DATA[item.sheet], t = tcfg(item.id);
     var raw = rawTable(item);
-    var head = '<h3>' + esc(s ? s.name : '') + ' · ' + esc(item.label) + ' <small>' +
+    var head = '<h3>' + esc(s ? sheetGroupTitle(s) : '') + ' · ' + esc(item.label) + ' <small>' +
       (d.err ? '⚠ ' + esc(d.err) : d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…') + '</small></h3>';
     if (!raw) { ed.innerHTML = head + '<div class="hint">Данные листа ещё не загружены или блок не найден в таблице.</div>'; return; }
     var pl = tablePayload(item);
@@ -531,7 +572,8 @@
       raw.columns.filter(function (c) { return c.role !== 'pilot' && c.role !== 'color'; }).map(function (c) {
         return '<option value="' + c.key + '"' + (t.sort === c.key ? ' selected' : '') + '>по «' + esc(c.label) + '»</option>';
       }).join('') + '</select></div>' +
-      (item.kind === 'block' ? '<label class="chk"><input type="checkbox" data-t="hideEmpty"' + (t.hideEmpty ? ' checked' : '') + '>скрывать строки без пилота</label>' : '') +
+      '<label class="chk"><input type="checkbox" data-t="hideEmpty"' + (t.hideEmpty ? ' checked' : '') + '>скрывать строки без пилота</label>' +
+      '<label class="chk"><input type="checkbox" data-t="hideEmptyCols"' + (t.hideEmptyCols !== false ? ' checked' : '') + '>скрывать пустые колонки</label>' +
       '</div>';
     html += '<div class="opts"><span class="lbl">Колонки в эфире:</span>' + raw.columns.map(function (c) {
       var on = !hiddenCols[c.key];
@@ -647,6 +689,7 @@
   $$('[data-out]').forEach(function (b) { b.onclick = function () { out(b.dataset.out); }; });
   $('#btnClear').onclick = function () { state.center = null; state.bottom = null; sendState(); renderList(); setupFlip(); };
   $('#btnReload').onclick = reloadAll;
+  $('#btnLogout').onclick = function () { if (confirm('Выйти из пульта на этом компьютере?')) CGAuth.logout(); };
   $('#srcSel').value = cfg.source;
   $('#srcSel').onchange = function () {
     cfg.source = this.value; save();
@@ -660,9 +703,10 @@
     $('#sPollA').value = cfg.pollActive; $('#sPollB').value = cfg.pollAll;
     $('#sTransport').value = cfg.transport; $('#sFbUrl').value = cfg.fbUrl || ''; $('#sRoom').value = cfg.room || '';
     $('#sVmixUrl').value = graphicsUrl();
-    $('#sGids').innerHTML = cfg.sheets.map(function (s, i) {
-      return '<label>gid листа «' + esc(s.name) + '»<input data-gid="' + i + '" value="' + esc(s.gid) + '"></label>';
-    }).join('');
+    $('#sGids').innerHTML = '<div class="sheetlist">' + cfg.sheets.map(function (s, i) {
+      return '<div class="sh"><label class="chk"><input type="checkbox" data-on="' + i + '"' + (s.on !== false ? ' checked' : '') + '>' + esc(s.name) + '</label>' +
+        '<input data-gid="' + i + '" value="' + esc(s.gid) + '" title="gid листа"></div>';
+    }).join('') + '</div>';
     modal.hidden = false;
   };
   $('#sCancel').onclick = function () { modal.hidden = true; };
@@ -672,6 +716,8 @@
     cfg.pollActive = Math.max(1, +$('#sPollA').value || 3);
     cfg.pollAll = Math.max(5, +$('#sPollB').value || 30);
     $$('[data-gid]').forEach(function (inp) { cfg.sheets[+inp.dataset.gid].gid = inp.value.replace(/\D/g, ''); });
+    $$('[data-on]').forEach(function (inp) { cfg.sheets[+inp.dataset.on].on = inp.checked; });
+    renderList();
     var prevT = cfg.transport + '|' + cfg.fbUrl + '|' + cfg.room;
     cfg.transport = $('#sTransport').value;
     cfg.fbUrl = CG.normFbUrl($('#sFbUrl').value);

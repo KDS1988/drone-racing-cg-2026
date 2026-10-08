@@ -191,7 +191,7 @@
   /* =================================================================== */
   /* Таблица                                                             */
   /* =================================================================== */
-  var ROLE_W = { idx: 78, rating: 128, rank: 92, okrug: 128, region: 250, place: 104, place2: 132, color: 168, channel: 100, time: 160, total: 118, score: 78, laps: 122, num: 122 };
+  var ROLE_W = { idx: 78, rating: 128, rank: 92, okrug: 128, region: 250, place: 104, place2: 132, color: 92, channel: 100, time: 160, total: 118, score: 78, laps: 122, num: 122 };
   var TOP_MIN = 48, HEAD_H = 136, COLS_H = 48, GAP = 5;
 
   function TableGfx(parent, item) {
@@ -232,7 +232,7 @@
       case 'color': {
         if (!v) return '';
         var cc = (window.CG && CG.colorOf(v)) || '#888';
-        return '<span class="chip" style="--cc:' + cc + '"><i></i>' + esc(v) + '</span>';
+        return '<span class="chip" title="' + esc(v) + '" style="--cc:' + cc + '"><i></i></span>';
       }
       default: return esc(v);
     }

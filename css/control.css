@@ -113,3 +113,13 @@ code{background:#0c1630;padding:1px 5px;border-radius:4px}
 .toast{position:fixed;right:16px;bottom:16px;background:#10224a;border:1px solid var(--blue);padding:10px 14px;border-radius:8px;z-index:60;max-width:420px}
 .toast.err{border-color:var(--red);background:#2a0e14}
 @media (max-width:1100px){.monitors{grid-template-columns:1fr}.main{grid-template-columns:280px 1fr}}
+
+.grp h4{cursor:pointer;user-select:none}
+.grp h4 .tw{font-style:normal;color:var(--mute);width:10px;display:inline-block}
+.grp h4 .airdot{color:var(--red);font-size:10px}
+.grp.collapsed{margin-bottom:6px}
+.sheetlist{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 14px;margin-bottom:10px}
+.sheetlist .sh{display:flex;gap:6px;align-items:center}
+.sheetlist .sh .chk{flex:1}
+.sheetlist .sh input[data-gid]{width:120px;font-size:12px;padding:4px 6px}
+.top .logout{font-size:12px}

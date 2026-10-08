@@ -137,7 +137,7 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .tbl .row.hl2 .badge::before,.tbl .row.hl3 .badge::before{background:var(--blue-deep);border-color:var(--blue)}
 .tbl .row.hl1::before{border-left-color:var(--red)}
 .tbl .chip{display:inline-flex;align-items:center;gap:.5em;font-size:.72em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#dcefff}
-.tbl .chip i{display:inline-block;width:1.9em;height:1.05em;transform:skewX(var(--skew));background:var(--cc,#888);box-shadow:0 0 12px var(--cc,#888)}
+.tbl .chip i{display:inline-block;width:2.2em;height:1.15em;transform:skewX(var(--skew));background:var(--cc,#888);box-shadow:0 0 12px var(--cc,#888)}
 .tbl .flash{animation:flash 1.4s ease-out}
 @keyframes flash{0%{background:rgba(60,185,244,.65);color:#fff}100%{background:rgba(60,185,244,0)}}
 .tbl .empty{font-family:var(--font-head);font-size:20px;letter-spacing:.2em;color:#9fc6e6;text-align:center;padding:26px 0;position:relative;z-index:0}

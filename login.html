@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Вход · Пульт CG · Гонки дронов 2026</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="css/fonts.css">
+<style>
+  :root{--blue:#3cb9f4;--blue2:#1d6fe0;--red:#f95357;--line:#1d2c50;--mute:#8aa2c8}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:'Montserrat','Exo 2',system-ui,sans-serif;color:#e8f2ff;background:#020d23 url(assets/texture.jpg) center top/cover no-repeat;display:flex;align-items:center;justify-content:center;padding:16px}
+  body::before{content:'';position:fixed;inset:0;background:linear-gradient(180deg,rgba(2,13,35,.55),rgba(2,13,35,.92))}
+  .card{position:relative;width:min(420px,100%);background:rgba(6,18,46,.92);border:1px solid var(--line);border-radius:14px;padding:30px 28px 26px;box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 0 1px rgba(60,185,244,.15)}
+  .card::before{content:'';position:absolute;left:0;right:0;top:0;height:4px;border-radius:14px 14px 0 0;background:linear-gradient(90deg,var(--blue) 0 60%,var(--red) 60% 100%)}
+  .logo{display:block;height:110px;margin:0 auto 10px}
+  h1{font-family:Unbounded,sans-serif;font-weight:900;font-size:20px;text-align:center;margin:4px 0 2px}
+  .sub{text-align:center;color:var(--mute);font-size:12.5px;margin-bottom:22px}
+  label{display:block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:6px}
+  input[type=password],input[type=text]{width:100%;font:inherit;font-size:16px;color:#fff;background:#050a16;border:1px solid var(--line);border-radius:8px;padding:11px 12px;outline:none}
+  input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(60,185,244,.2)}
+  .rem{display:flex;align-items:center;gap:8px;margin:14px 0 18px;font-size:14px;cursor:pointer;user-select:none;text-transform:none;letter-spacing:0;color:#e8f2ff;font-weight:600}
+  .rem input{width:17px;height:17px;accent-color:var(--blue)}
+  button{width:100%;font:inherit;font-weight:800;font-size:15px;letter-spacing:.04em;color:#fff;background:var(--blue2);border:1px solid var(--blue);border-radius:8px;padding:12px;cursor:pointer}
+  button:hover{background:#2a82f5}
+  .err{color:#ffc9cf;background:#2a0e14;border:1px solid #6d1f2b;border-radius:8px;padding:9px 12px;font-size:13px;margin-top:12px;display:none}
+  .err.on{display:block}
+  .hashbox{margin-top:16px;font-size:12px;color:var(--mute);word-break:break-all;display:none}
+  .hashbox.on{display:block}
+  .hashbox code{color:#e8f2ff;background:#050a16;padding:6px 8px;border-radius:6px;display:block;margin-top:6px}
+</style>
+</head>
+<body>
+<form class="card" id="f" autocomplete="on">
+  <img class="logo" src="assets/logo.png" alt="Гонки дронов · Первенство России 2026">
+  <h1>ПУЛЬТ CG</h1>
+  <div class="sub">Доступ только для операторов трансляции</div>
+  <label for="pw">Пароль</label>
+  <input type="password" id="pw" name="password" autocomplete="current-password" autofocus required>
+  <label class="rem"><input type="checkbox" id="rem" checked> Запомнить меня на этом ПК</label>
+  <button type="submit">Войти</button>
+  <div class="err" id="err">Неверный пароль</div>
+  <div class="hashbox" id="hb">Хэш этого пароля для js/auth.js:<code id="hv"></code></div>
+</form>
+<script src="js/auth.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var next = q.get('next') || 'control.html';
+  if (!/^[\w.-]+\.html(\?[^#]*)?$/.test(next)) next = 'control.html'; // только свои страницы
+  var hashMode = q.has('hash');
+  if (!hashMode && CGAuth.isLoggedIn()) { location.replace(next); return; }
+  document.getElementById('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var pw = document.getElementById('pw').value;
+    if (hashMode) { document.getElementById('hv').textContent = CGAuth.hashOf(pw); document.getElementById('hb').classList.add('on'); return; }
+    if (CGAuth.login(pw, document.getElementById('rem').checked)) location.replace(next);
+    else { var er = document.getElementById('err'); er.classList.add('on'); document.getElementById('pw').select(); }
+  });
+})();
+</script>
+</body>
+</html>

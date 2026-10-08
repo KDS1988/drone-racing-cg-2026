@@ -19,16 +19,34 @@
     pollActive: 3,             // сек — опрос листа, который в эфире / в редакторе
     pollAll: 30,               // сек — фоновый опрос остальных листов
     eventTitle: 'Первенство России',
-    sheets: [
-      { key: 'LZM', name: '75 ЛЗ М', gid: '1000505927', mode: 'individual', cls: 'Класс 75', comp: 'Личный зачёт',    cat: 'Юниоры'  },
-      { key: 'LZW', name: '75 ЛЗ Ж', gid: '920113390',  mode: 'individual', cls: 'Класс 75', comp: 'Личный зачёт',    cat: 'Юниорки' },
-      { key: 'KZM', name: '75 КЗ М', gid: '1035349723', mode: 'team',       cls: 'Класс 75', comp: 'Командный зачёт', cat: 'Юниоры'  },
-      { key: 'KZW', name: '75 КЗ Ж', gid: '1134263816', mode: 'team',       cls: 'Класс 75', comp: 'Командный зачёт', cat: 'Юниорки' }
-    ]
+    sheetsVersion: 2,
+    sheets: null              // заполняется из SHEET_CATALOG
   };
 
+  /* Все листы судейской таблицы (имя → gid). on — показывать в пульте. */
+  var SHEET_CATALOG = [
+    ['75 ЛЗ М', '1000505927'], ['75 ЛЗ Ж', '920113390'], ['75 КЗ М', '1035349723'], ['75 КЗ Ж', '1134263816'],
+    ['200 ЛЗ М', '691904425'], ['200 ЛЗ Ж', '1033755617'], ['200 КЗ М', '936846371'], ['200 КЗ Ж', '1512937086'],
+    ['330 ЛЗ М', '1782500014'], ['330 ЛЗ Ж', '2107423122'], ['330 КЗ М', '1391772719'], ['330 КЗ Ж', '855223771'],
+    ['ТС ЛЗ М', '2029195399'], ['ТС ЛЗ Ж', '250962065'], ['ТС КЗ М', '77532805'], ['ТС КЗ Ж', '404817593']
+  ];
+  function sheetFromName(name, gid) {
+    var m = /^(\S+)\s+(ЛЗ|КЗ)\s+(М|Ж)/i.exec(String(name).trim()) || [];
+    var team = /кз/i.test(m[2] || '');
+    var key = String(name).replace(/ТС/g, 'TS').replace(/ЛЗ/g, 'LZ').replace(/КЗ/g, 'KZ').replace(/М/g, 'M').replace(/Ж/g, 'W').replace(/[^\w]/g, '');
+    return {
+      key: key, name: name, gid: String(gid || ''), mode: team ? 'team' : 'individual',
+      cls: m[1] ? (/^\d+$/.test(m[1]) ? 'Класс ' + m[1] : m[1]) : '',
+      comp: team ? 'Командный зачёт' : 'Личный зачёт',
+      cat: /ж/i.test(m[3] || '') ? 'Юниорки' : 'Юниоры',
+      on: !/^ТС/i.test(name)
+    };
+  }
+  DEFAULT_CONFIG.sheets = SHEET_CATALOG.map(function (x) { return sheetFromName(x[0], x[1]); });
+  var DEMO_KEYS = { '75LZM': 1, '75LZW': 1, '75KZM': 1, '75KZW': 1 };
+
   function sheetCsvUrl(cfg, sheet) {
-    if (cfg.source === 'demo') return 'demo/' + sheet.key + '.csv';
+    if (cfg.source === 'demo') return DEMO_KEYS[sheet.key] ? 'demo/' + sheet.key + '.csv' : null;
     return 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(cfg.sheetId) +
       '/export?format=csv&gid=' + encodeURIComponent(sheet.gid) + '&_=' + Date.now();
   }
@@ -101,10 +119,11 @@
     if (/^место/.test(l)) return 'place2';
     if (l === 'цвет') return 'color';
     if (l === 'канал') return 'channel';
-    if (/^время/.test(l)) return 'time';
+    if (/^время/.test(l) || /лучший круг/.test(l)) return 'time';
     if (l === 'сумма') return 'total';
-    if (/^(1|2|3|доп\.?)$/.test(l)) return 'score';
+    if (/^(1|2|3|4|5|доп\.?|штраф)$/.test(l)) return 'score';
     if (/круг/.test(l)) return 'laps';
+    if (l === 'группа') return 'group';
     return 'num';
   }
 
@@ -112,12 +131,15 @@
   /* Разбор листа                                                        */
   /* ------------------------------------------------------------------ */
   var STAGE_RE = [
+    [/квалификац/i, 'Квалификация'],
     [/четвертьфинал/i, 'Четвертьфинал'],
     [/полуфинал/i, 'Полуфинал'],
     [/групповой\s*этап/i, 'Групповой этап'],
     [/финал/i, 'Финал']
   ];
-  var LABEL_STOP_RE = /^(группа\s*\d+|полуфинал|финал|четвертьфинал|групповой этап|квалификация|команда|место)$/i;
+  var GROUP_RE = /группа\s*(\d+)|(\d+)\s*группа/i;
+  function groupOf(v) { var m = GROUP_RE.exec(norm(v)); return m ? (m[1] || m[2]) : null; }
+  function isLabel(v) { v = norm(v); return !!v && (!!groupOf(v) || !!stageOf(v) || /^(команда|место)$/i.test(v)); }
 
   function stageOf(v) {
     var s = norm(v);
@@ -130,7 +152,7 @@
     var nRows = grid.length, nCols = 0, r, c;
     for (r = 0; r < nRows; r++) nCols = Math.max(nCols, grid[r].length);
     var team = sheet.mode === 'team';
-    var out = { key: sheet.key, mode: sheet.mode, category: sheet.cat, title: '', quali: null, blocks: [], known: {} };
+    var out = { key: sheet.key, mode: sheet.mode, category: sheet.cat, cls: sheet.cls, comp: sheet.comp, title: '', quali: null, blocks: [], known: {} };
 
     // Категория / заголовок
     for (r = 0; r < Math.min(nRows, 14); r++) {
@@ -140,6 +162,12 @@
         if (/^класс\s/i.test(v) && !out.title) out.title = v;
       }
     }
+    // «КЛАСС 330 ЛИЧНЫЙ ЗАЧЁТ» → класс, зачёт и режим берём из самого листа
+    var tm = /класс\s+(\S+)/i.exec(out.title);
+    if (tm) out.cls = 'Класс ' + tm[1];
+    if (/командн/i.test(out.title)) { team = true; out.mode = 'team'; out.comp = 'Командный зачёт'; }
+    else if (/личн/i.test(out.title)) { team = false; out.mode = 'individual'; out.comp = 'Личный зачёт'; }
+    out.short = (tm ? tm[1] : (sheet.cls || '').replace(/^класс\s*/i, '')) + ' ' + (team ? 'КЗ' : 'ЛЗ') + ' ' + (/юниорк/i.test(out.category) ? 'Ж' : 'М');
 
     /* ---------- Квалификация (основная таблица слева) ---------- */
     var hr = -1;
@@ -191,58 +219,83 @@
       out.quali = { has: qcols, items: items };
     }
 
-    /* ---------- Блоки заездов (полуфиналы, группы, финалы) ---------- */
+    /* ---------- Блоки заездов (квалификация, полуфиналы, группы, финалы) ---------- */
+    var findStage = function (r0, c0) {
+      var stage = null, group = null;
+      for (var rr = r0 - 1; rr >= 0; rr--) {
+        var lv = G(rr, c0);
+        if (!lv) continue;
+        if (!group && groupOf(lv)) group = groupOf(lv);
+        var st = stageOf(lv);
+        if (st) { stage = st; break; }
+      }
+      return { stage: stage || 'Заезд', group: group };
+    };
+    var pilotOk = function (p) { return p && !isPlaceholder(p); };
     for (r = 0; r < nRows; r++) {
       for (c = 1; c < nCols; c++) {
         var a = low(G(r, c)), b = low(G(r, c + 1));
-        if (!((a === 'место' || a === 'команда') && (b === 'ранг' || b === 'фио' || b === 'пилот'))) continue;
+        var isPilotHdr = (b === 'ранг' || b === 'фио' || b === 'пилот' || b === 'пилоты');
+        var grouped = a === 'группа' && b !== 'ранг' && isPilotHdr;
+        if (!(((a === 'место' || a === 'команда') && isPilotHdr) || grouped)) continue;
         // колонки
-        var cols = [], cc = c, seen = {};
+        var cols = [], cc = c;
         while (cc < nCols && G(r, cc)) {
           var lab = G(r, cc);
           cols.push({ c: cc, key: 'c' + cc, label: lab, role: colRole(lab) });
           cc++;
         }
-        // stage / group: вверх по той же колонке
-        var stage = null, group = null, rr;
-        for (rr = r - 1; rr >= 0; rr--) {
-          var lv = G(rr, c);
-          if (!lv) continue;
-          if (!group && /^группа\s*\d+/i.test(lv)) { group = lv.match(/\d+/)[0]; continue; }
-          var st = stageOf(lv);
-          if (st) { stage = st; break; }
-        }
-        if (!stage) stage = 'Заезд';
+        var sg = findStage(r, c), rr;
+        var stage = sg.stage, group = sg.group;
         var hasSum = cols.some(function (x) { return x.role === 'total'; });
         var pilotCol = cols.filter(function (x) { return x.role === 'pilot'; })[0];
         var placeCol = cols[0];
         var rankCol = cols.filter(function (x) { return x.role === 'rank'; })[0];
         var sumCol = cols.filter(function (x) { return x.role === 'total'; })[0];
-        var rowsOut = [];
-        var stopAt = function (rr2) { var v2 = G(rr2, c); return v2 && LABEL_STOP_RE.test(v2.replace(/\s+/g, ' ')); };
         var blockEmpty = function (rr2) { for (var k = 0; k < cols.length; k++) if (G(rr2, cols[k].c)) return false; return true; };
+        var cellsOf = function (rr2) { var o = {}; cols.forEach(function (x) { o[x.key] = clean(G(rr2, x.c)); }); return o; };
 
+        if (grouped) {
+          // «Группа | Пилот | Канал | Цвет | Лучший круг»: группы идут подряд, метка группы — в первой колонке
+          var gcols = cols.slice(1), byGroup = {}, gOrder = [], curG = group || '1', emp0 = 0;
+          for (rr = r + 1; rr < nRows && rr < r + 400; rr++) {
+            var lv0 = G(rr, c);
+            if (lv0 && stageOf(lv0) && !groupOf(lv0)) break;
+            if (lv0 && groupOf(lv0)) curG = groupOf(lv0);
+            if (blockEmpty(rr)) { if (++emp0 >= 6) break; continue; }
+            emp0 = 0;
+            if (!byGroup[curG]) { byGroup[curG] = []; gOrder.push(curG); }
+            var cl = cellsOf(rr); delete cl[placeCol.key];
+            byGroup[curG].push({ rowId: 'r' + rr, cells: cl, pilotsRaw: pilotCol && pilotOk(cl[pilotCol.key]) ? [cl[pilotCol.key]] : [] });
+          }
+          gOrder.forEach(function (gN) {
+            out.blocks.push({ id: stage + '|' + gN + '|c' + c, stage: stage, group: gN, col: c, row: r, columns: gcols, rows: byGroup[gN], team: false });
+          });
+          c = cc; continue;
+        }
+
+        var rowsOut = [];
+        var stopAt = function (rr2) { var v2 = G(rr2, c); return v2 && isLabel(v2) && !/^\d+$/.test(v2); };
         if (hasSum) {
           // личный зачёт: строка шаблона = есть «Сумма» (формула) или место / ранг
           for (rr = r + 1; rr < nRows; rr++) {
             if (stopAt(rr)) break;
             var ok = G(rr, sumCol.c) || G(rr, placeCol.c) || (rankCol && G(rr, rankCol.c));
             if (!ok) { if (rowsOut.length) break; if (rr - r > 2) break; continue; }
-            var cells = {};
-            cols.forEach(function (x) { cells[x.key] = clean(G(rr, x.c)); });
-            rowsOut.push({ rowId: 'r' + rr, cells: cells, pilotsRaw: pilotCol ? [cells[pilotCol.key]].filter(function (p) { return p && !isPlaceholder(p); }) : [] });
+            var cells = cellsOf(rr);
+            rowsOut.push({ rowId: 'r' + rr, cells: cells, pilotsRaw: pilotCol && pilotOk(cells[pilotCol.key]) ? [cells[pilotCol.key]] : [] });
           }
         } else {
-          // командный: команда = 1–2 строки, новая команда начинается с непустой первой колонки
+          // командный: команда = 1–2 строки; строка с данными (канал, цвет, время…) начинает новую команду,
+          // строка только с фамилией — второй пилот той же команды
           var curT = null, emp = 0;
-          for (rr = r + 1; rr < nRows && rr < r + 60; rr++) {
+          for (rr = r + 1; rr < nRows && rr < r + 80; rr++) {
             if (stopAt(rr)) break;
             if (blockEmpty(rr)) { if (++emp >= 8) break; continue; }
             emp = 0;
-            var first = G(rr, placeCol.c);
             var pv = pilotCol ? G(rr, pilotCol.c) : '';
-            var others = cols.some(function (x) { return x !== placeCol && x !== pilotCol && G(rr, x.c); });
-            if (first || !curT || (others && curT.pilotsRaw.length >= 2) || (pv && curT.pilotsRaw.length >= 2)) {
+            var others = cols.some(function (x) { return x !== pilotCol && G(rr, x.c); });
+            if (others || !curT || curT.pilotsRaw.length >= 2) {
               curT = { rowId: 'r' + rr, cells: {}, pilotsRaw: [] };
               rowsOut.push(curT);
             }
@@ -251,7 +304,7 @@
               var vv = clean(G(rr, x.c));
               if (vv && !curT.cells[x.key]) curT.cells[x.key] = vv;
             });
-            if (pv && !isPlaceholder(pv)) curT.pilotsRaw.push(pv);
+            if (pilotOk(pv)) curT.pilotsRaw.push(pv);
           }
           rowsOut.forEach(function (t) { if (pilotCol) t.cells[pilotCol.key] = t.pilotsRaw.join(' | '); });
         }
@@ -260,8 +313,9 @@
         c = cc; // пропускаем колонки блока
       }
     }
+    // имена пилотов из заездов тоже помогают распознать формат «Фамилия Имя»
     // Сортировка блоков: по этапу, затем по группе
-    var order = { 'Групповой этап': 1, 'Четвертьфинал': 2, 'Полуфинал': 3, 'Финал': 4, 'Заезд': 5 };
+    var order = { 'Квалификация': 0, 'Групповой этап': 1, 'Четвертьфинал': 2, 'Полуфинал': 3, 'Финал': 4, 'Заезд': 5 };
     out.blocks.sort(function (x, y) {
       return (order[x.stage] - order[y.stage]) || ((x.group ? +x.group : 0) - (y.group ? +y.group : 0)) || (x.col - y.col);
     });
@@ -279,22 +333,23 @@
   /* Цвета пилотов                                                       */
   /* ------------------------------------------------------------------ */
   var COLORS = {
-    '': '#ff3b47', 'red': '#ff3b47',
-    '': '#2f7dff', 'blue': '#2f7dff', 
-    '': '#3cb9f4',
-    '': '#2fe36b', 'green': '#2fe36b',
-    '': '#ffd43b', 'yellow': '#ffd43b',
-    '': '#ff8a2b', 'orange': '#ff8a2b',
-    '': '#ff00ff', 'magenta': '#ff00ff',
-    '': '#a35bff', 'purple': '#a35bff',
-    '': '#ffffff', 'white': '#ffffff',
-    '': '#ff5fb8', 'pink': '#ff5fb8'
+    'красный': '#ff2d3d', 'red': '#ff2d3d',
+    'оранжевый': '#ff8a1f', 'orange': '#ff8a1f',
+    'желтый': '#ffd60a', 'yellow': '#ffd60a',
+    'зеленый': '#22e35b', 'green': '#22e35b',
+    'голубой': '#3cd4ff', 'cyan': '#3cd4ff', 'light blue': '#3cd4ff',
+    'синий': '#2a5bff', 'blue': '#2a5bff',
+    'пурпурный': '#ff2bd6', 'фуксия': '#ff2bd6', 'малиновый': '#e0115f', 'magenta': '#ff2bd6',
+    'фиолетовый': '#8a4dff', 'purple': '#8a4dff', 'violet': '#8a4dff',
+    'розовый': '#ff6fb5', 'pink': '#ff6fb5',
+    'белый': '#ffffff', 'white': '#ffffff'
   };
   function colorOf(v) {
     var k = low(v);
+    if (!k) return null;
     if (COLORS[k]) return COLORS[k];
     if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(k)) return k;
-    for (var n in COLORS) if (k.indexOf(n) === 0) return COLORS[n];
+    for (var n in COLORS) if (n && k.indexOf(n) === 0) return COLORS[n];
     return null;
   }
 
@@ -424,7 +479,7 @@
   };
 
   return {
-    DEFAULT_CONFIG: DEFAULT_CONFIG,
+    DEFAULT_CONFIG: DEFAULT_CONFIG, SHEET_CATALOG: SHEET_CATALOG, sheetFromName: sheetFromName,
     sheetCsvUrl: sheetCsvUrl,
     parseCSV: parseCSV,
     parseSheet: parseSheet,

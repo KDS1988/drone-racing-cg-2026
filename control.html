@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <title>Пульт CG · Гонки дронов 2026</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<script src="js/auth.js"></script>
+<script>CGAuth.guard();</script>
 <link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/control.css">
 </head>
@@ -23,6 +26,7 @@
     </select>
     <button class="btn" id="btnReload" title="Перечитать таблицу сейчас">⟳ Обновить</button>
     <button class="btn" id="btnSettings">⚙ Настройки</button>
+    <button class="btn logout" id="btnLogout" title="Выйти из пульта">Выйти</button>
     <button class="btn danger big" id="btnClear">СНЯТЬ ВСЁ</button>
   </div>
 </header>
@@ -54,7 +58,9 @@
   <div class="dlg">
     <h2>Настройки</h2>
     <label>ID Google-таблицы<input id="sSheetId" spellcheck="false"></label>
-    <div class="grid2" id="sGids"></div>
+    <h3>Листы в пульте</h3>
+    <p class="hint">Отметьте листы, которые нужны в эфире. Название класса, зачёт и категория берутся из самого листа.</p>
+    <div id="sGids"></div>
     <div class="grid2">
       <label>Опрос «горячего» листа, сек<input id="sPollA" type="number" min="1" max="60"></label>
       <label>Опрос остальных листов, сек<input id="sPollB" type="number" min="5" max="600"></label>
