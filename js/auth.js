@@ -10,7 +10,7 @@
   'use strict';
   var SALT = 'drone-cg-2026:';
   var PASS_HASHES = [
-    '920cc96904305178006c1db835e0235f44e610ad9c027af735beef996fe79dd3'  // временный пароль — смените (см. README)
+    '0b53c5f4483a76262ffbe11fd81c5764318370f1e33cb50ae09b6790ebcf9f68'  // основной пароль (Дмитрий)
   ];
   var KEY = 'drone-cg-auth';
 
