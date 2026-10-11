@@ -123,3 +123,5 @@ code{background:#0c1630;padding:1px 5px;border-radius:4px}
 .sheetlist .sh .chk{flex:1}
 .sheetlist .sh input[data-gid]{width:120px;font-size:12px;padding:4px 6px}
 .top .logout{font-size:12px}
+.tact label.btn{display:inline-flex;flex-direction:row;align-items:center;color:var(--ink);font-size:14px;text-transform:none;letter-spacing:.02em;font-weight:700}
+.tact label.btn[hidden]{display:none}

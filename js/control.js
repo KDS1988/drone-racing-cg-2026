@@ -60,7 +60,13 @@
   /* =================================================================== */
   var DATA = {};  // key → { parsed, at, err, hash, busy, last }
   /** листы, которые показываются в пульте (включены в настройках; в демо — только те, для которых есть демо-файл) */
-  function activeSheets() { return cfg.sheets.filter(function (s) { return s.on !== false && CG.sheetCsvUrl(cfg, s); }); }
+  function activeSheets() {
+    return cfg.sheets.filter(function (s) {
+      if (s.on === false || !CG.sheetCsvUrl(cfg, s)) return false;
+      if (cfg.source === 'file' && OFFLINE.fileName && offlineCsv(s) == null) return false; // листа нет в файле — не показываем
+      return true;
+    });
+  }
   cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
   function sheetByKey(k) { return cfg.sheets.filter(function (s) { return s.key === k; })[0]; }
 
@@ -76,13 +82,48 @@
     });
   }
 
+  /* ---------- офлайн-источник: выгрузка таблицы в .xlsx ---------- */
+  var OFF_KEY = 'drone-cg-offline';
+  var OFFLINE = { byName: {}, fileName: '', at: 0 };
+  try { OFFLINE = JSON.parse(localStorage.getItem(OFF_KEY)) || OFFLINE; } catch (e) {}
+  function offlineCsv(s) {
+    var want = CG.low(s.name).replace(/\s+/g, ' ');
+    for (var n in OFFLINE.byName) if (CG.low(n).replace(/\s+/g, ' ') === want) return OFFLINE.byName[n];
+    return null;
+  }
+  function loadXlsxLib() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise(function (res, rej) {
+      var sc = document.createElement('script'); sc.src = 'js/vendor/xlsx.full.min.js';
+      sc.onload = res; sc.onerror = function () { rej(new Error('не удалось загрузить js/vendor/xlsx.full.min.js')); };
+      document.head.appendChild(sc);
+    });
+  }
+  function importXlsx(file) {
+    return loadXlsxLib().then(function () { return file.arrayBuffer(); }).then(function (buf) {
+      var wb = XLSX.read(buf, { type: 'array' }), byName = {}, n = 0;
+      wb.SheetNames.forEach(function (name) {
+        byName[name] = XLSX.utils.sheet_to_csv(wb.Sheets[name], { blankrows: true });
+        n++;
+      });
+      OFFLINE = { byName: byName, fileName: file.name, at: Date.now() };
+      try { localStorage.setItem(OFF_KEY, JSON.stringify(OFFLINE)); } catch (e) { toast('Файл загружен, но не сохранён в браузере (слишком большой) — после перезагрузки пульта загрузите его снова', true); }
+      cfg.sheets.forEach(function (sh) { DATA[sh.key].hash = ''; DATA[sh.key].parsed = null; DATA[sh.key].err = null; });
+      renderList(); reloadAll();
+      var found = cfg.sheets.filter(function (sh) { return sh.on !== false && offlineCsv(sh); }).length;
+      toast('Загружен «' + file.name + '»: листов в файле ' + n + ', в пульте ' + found);
+    });
+  }
+
   function loadSheet(s) {
     var d = DATA[s.key];
     if (d.busy) return Promise.resolve();
     d.busy = true; d.last = Date.now();
     var url = CG.sheetCsvUrl(cfg, s);
     if (!url) { d.busy = false; return Promise.resolve(); }
-    var p = fetchText(url).catch(function (e) {
+    var p = cfg.source === 'file'
+      ? (offlineCsv(s) != null ? Promise.resolve(offlineCsv(s)) : Promise.reject(new Error(OFFLINE.fileName ? 'нет листа «' + s.name + '» в файле' : 'загрузите файл .xlsx')))
+      : fetchText(url).catch(function (e) {
       if (cfg.source === 'google' && bus && bus.mode === 'server') {
         return fetchText('api/sheet?id=' + encodeURIComponent(cfg.sheetId) + '&gid=' + encodeURIComponent(s.gid));
       }
@@ -390,7 +431,9 @@
     if (errs.length) { p.className = 'pill bad'; p.textContent = 'ДАННЫЕ: ОШИБКА'; p.title = errs.join('\n'); }
     else if (loaded) {
       p.className = 'pill ok';
-      p.textContent = 'ДАННЫЕ: ' + (cfg.source === 'demo' ? 'ДЕМО' : 'GOOGLE') + ' · ' + new Date(newest).toLocaleTimeString('ru-RU');
+      p.textContent = cfg.source === 'file'
+        ? 'ДАННЫЕ: ФАЙЛ · ' + (OFFLINE.fileName || '—') + ' · ' + (OFFLINE.at ? new Date(OFFLINE.at).toLocaleTimeString('ru-RU') : '')
+        : 'ДАННЫЕ: ' + (cfg.source === 'demo' ? 'ДЕМО' : 'GOOGLE') + ' · ' + new Date(newest).toLocaleTimeString('ru-RU');
       p.title = 'Листов загружено: ' + loaded;
     } else { p.className = 'pill warn'; p.textContent = 'ДАННЫЕ: ЗАГРУЗКА…'; }
     $('#pDemo').hidden = cfg.source !== 'demo';
@@ -691,8 +734,15 @@
   $('#btnReload').onclick = reloadAll;
   $('#btnLogout').onclick = function () { if (confirm('Выйти из пульта на этом компьютере?')) CGAuth.logout(); };
   $('#srcSel').value = cfg.source;
+  function syncFileBtn() { $('#btnFile').hidden = cfg.source !== 'file'; }
+  syncFileBtn();
+  $('#xlsxIn').onchange = function () {
+    var f = this.files[0]; this.value = '';
+    if (f) importXlsx(f).catch(function (e) { toast('Не удалось прочитать файл: ' + e.message, true); });
+  };
   $('#srcSel').onchange = function () {
-    cfg.source = this.value; save();
+    cfg.source = this.value; save(); syncFileBtn();
+    if (cfg.source === 'file' && !OFFLINE.fileName) setTimeout(function () { $('#xlsxIn').click(); }, 50);
     cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
     renderList(); renderEditor(); reloadAll();
   };

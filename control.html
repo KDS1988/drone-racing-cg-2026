@@ -22,8 +22,10 @@
   <div class="tact">
     <select id="srcSel" title="Источник данных">
       <option value="google">Google Таблица</option>
+      <option value="file">Файл Excel (без интернета)</option>
       <option value="demo">Демо-данные (репетиция)</option>
     </select>
+    <label class="btn" id="btnFile" hidden title="Выгрузка судейской таблицы: Файл → Скачать → Microsoft Excel (.xlsx)">📂 Загрузить .xlsx<input type="file" id="xlsxIn" accept=".xlsx,.xls,.ods" hidden></label>
     <button class="btn" id="btnReload" title="Перечитать таблицу сейчас">⟳ Обновить</button>
     <button class="btn" id="btnSettings">⚙ Настройки</button>
     <button class="btn logout" id="btnLogout" title="Выйти из пульта">Выйти</button>

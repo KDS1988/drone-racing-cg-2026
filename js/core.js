@@ -47,6 +47,7 @@
 
   function sheetCsvUrl(cfg, sheet) {
     if (cfg.source === 'demo') return DEMO_KEYS[sheet.key] ? 'demo/' + sheet.key + '.csv' : null;
+    if (cfg.source === 'file') return 'file:' + sheet.key;   // офлайн: лист из загруженного .xlsx
     return 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(cfg.sheetId) +
       '/export?format=csv&gid=' + encodeURIComponent(sheet.gid) + '&_=' + Date.now();
   }
