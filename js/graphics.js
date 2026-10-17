@@ -154,7 +154,7 @@
   /* =================================================================== */
   function LowerGfx(parent, item) {
     this.root = h('div', 'lower');
-    this.root.innerHTML = '<div class="brand"><img src="assets/logo.png" alt=""></div><div class="body"><div class="name"></div><div class="role"></div></div><div class="bar"></div>';
+    this.root.innerHTML = '<div class="brand"><img src="assets/logo.png?v=chr26" alt=""></div><div class="body"><div class="name"></div><div class="role"></div></div><div class="bar"></div>';
     parent.appendChild(this.root);
     this.set(item.data);
   }
@@ -198,7 +198,7 @@
     this.parent = parent;
     this.root = h('div', 'tbl');
     this.root.innerHTML =
-      '<div class="head"><img class="logo" src="assets/logo.png" alt="">' +
+      '<div class="head"><img class="logo" src="assets/logo.png?v=chr26" alt="">' +
       '<div class="tt"><div class="t1"></div><div class="t2"></div></div><div class="pg"></div>' +
       '<div class="stripes"><div class="speed b"></div><div class="speed r"></div></div></div>' +
       '<div class="cols"></div><div class="rows"></div>';
