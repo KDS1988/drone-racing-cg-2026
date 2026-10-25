@@ -340,7 +340,7 @@
     if (item.type === 'start') return clone(store.start);
     if (item.type === 'geo') return clone(store.geo);
     if (item.type === 'lower') return clone(store.lowers[item.idx] || {});
-    if (item.type === 'logos') return { items: (store.logos.items || []).map(function (l) { return l.src; }), interval: +store.logos.interval || 5, plate: store.logos.plate || 'white' };
+    if (item.type === 'logos') return { items: (store.logos.items || []).map(function (l) { return { src: l.src, scale: (l.scale || 100) / 100 }; }), interval: +store.logos.interval || 5, plate: store.logos.plate || 'white' };
     if (item.type === 'table') return tablePayload(item);
     return null;
   }
@@ -544,7 +544,7 @@
       ed.innerHTML = '<h3>Геотитр <small>650×100, внизу слева</small></h3><div class="fields">' +
         field('Город', 'city', store.geo.city) + field('Дата', 'date', store.geo.date) + '</div>';
       bindFields(ed, store.geo);
-    } else if (item.type === 'logos') renderLogosEditor(ed);
+    } else if (item.type === 'logos') { retrimOld(); renderLogosEditor(ed); }
     else if (item.type === 'table') renderTableEditor(ed, item);
     renderOnAir();
   }
@@ -610,24 +610,68 @@
   }
 
   /* ---------- карусель логотипов ---------- */
+  // обрезаем пустые поля (прозрачные или однотонный фон по углам) и приводим к 600×360 —
+  // чтобы все логотипы одинаково заполняли плашку карусели
+  function trimLogo(src) {
+    return new Promise(function (res, rej) {
+      var img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth || img.width || 600, h = img.naturalHeight || img.height || 360;
+        var k0 = Math.min(1600 / w, 1600 / h, w < 400 ? 4 : 1); // SVG/мелкие — растрируем крупнее
+        w = Math.max(1, Math.round(w * k0)); h = Math.max(1, Math.round(h * k0));
+        var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        var cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, w, h);
+        var d; try { d = cx.getImageData(0, 0, w, h).data; } catch (e) { d = null; }
+        var x0 = 0, y0 = 0, x1 = w - 1, y1 = h - 1;
+        if (d) {
+          var at = function (x, y) { var i = (y * w + x) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; };
+          var c = at(0, 0), transp = c[3] < 20;
+          var bg = transp ? null : c;
+          var isContent = function (i) {
+            if (d[i + 3] < 20) return false;
+            if (transp) return true;
+            return Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) > 60;
+          };
+          var minX = w, minY = h, maxX = -1, maxY = -1;
+          for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+            if (isContent((y * w + x) * 4)) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+          }
+          if (maxX >= 0) { x0 = minX; y0 = minY; x1 = maxX; y1 = maxY; }
+          // непрозрачный фон (JPG на белом) — делаем фон прозрачным, чтобы логотип лёг на подложку
+          if (!transp && bg[0] > 235 && bg[1] > 235 && bg[2] > 235) {
+            var id = cx.getImageData(0, 0, w, h), dd = id.data;
+            for (var j = 0; j < dd.length; j += 4) {
+              var dist = Math.abs(dd[j] - bg[0]) + Math.abs(dd[j + 1] - bg[1]) + Math.abs(dd[j + 2] - bg[2]);
+              if (dist < 24) dd[j + 3] = 0; else if (dist < 60) dd[j + 3] = Math.round(dd[j + 3] * (dist - 24) / 36);
+            }
+            cx.putImageData(id, 0, 0);
+          }
+        }
+        var cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+        var k = Math.min(600 / cw, 360 / ch);
+        var out = document.createElement('canvas'); out.width = Math.max(1, Math.round(cw * k)); out.height = Math.max(1, Math.round(ch * k));
+        var ox = out.getContext('2d'); ox.imageSmoothingQuality = 'high';
+        ox.drawImage(cv, x0, y0, cw, ch, 0, 0, out.width, out.height);
+        res(out.toDataURL('image/png'));
+      };
+      img.onerror = function () { rej(new Error('не удалось прочитать картинку')); };
+      img.src = src;
+    });
+  }
   function shrinkImage(file) {
-    // уменьшаем до 600×360 и сохраняем PNG (прозрачность сохраняется) — чтобы быстро передавалось в графику
     return new Promise(function (res, rej) {
       var fr = new FileReader();
-      fr.onload = function () {
-        var img = new Image();
-        img.onload = function () {
-          var k = Math.min(1, 600 / img.width, 360 / img.height);
-          var cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
-          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-          res(cv.toDataURL('image/png'));
-        };
-        img.onerror = function () { rej(new Error('не картинка: ' + file.name)); };
-        img.src = fr.result;
-      };
+      fr.onload = function () { trimLogo(fr.result).then(res, function () { rej(new Error('не картинка: ' + file.name)); }); };
       fr.onerror = rej;
       fr.readAsDataURL(file);
     });
+  }
+  // логотипы, загруженные до появления обрезки, — обрабатываем один раз
+  function retrimOld() {
+    var L = store.logos, todo = (L.items || []).filter(function (l) { return !l.trim; });
+    if (!todo.length) return;
+    Promise.all(todo.map(function (l) { return trimLogo(l.src).then(function (src) { l.src = src; l.trim = 1; }, function () { l.trim = 1; }); }))
+      .then(function () { save(); refreshOnAir(); updatePreview(false); if (store.selected === 'logos') renderEditor(); });
   }
   function renderLogosEditor(ed) {
     var L = store.logos;
@@ -640,25 +684,34 @@
       '<label class="btn file">+ Добавить логотипы<input type="file" id="lgAdd" accept="image/*" multiple hidden></label>' +
       '</div><div class="lglist">';
     (L.items || []).forEach(function (l, i) {
-      html += '<div class="lg"><div class="lgimg ' + esc(L.plate || 'white') + '"><img src="' + l.src + '" alt=""></div><div class="lgname" title="' + esc(l.name) + '">' + esc(l.name) + '</div>' +
+      html += '<div class="lg"><div class="lgimg ' + esc(L.plate || 'white') + '"><img src="' + l.src + '" alt="" style="transform:scale(' + ((l.scale || 100) / 100) + ')"></div><div class="lgname" title="' + esc(l.name) + '">' + esc(l.name) + '</div>' +
+        '<div class="lgsc"><span class="lbl">Размер</span><input type="range" min="50" max="130" step="5" data-lsc="' + i + '" value="' + esc(l.scale || 100) + '"><b>' + esc(l.scale || 100) + '%</b></div>' +
         '<div class="row"><button class="btn sm" data-lmv="' + i + '" data-d="-1" title="Раньше">◀</button><button class="btn sm" data-lmv="' + i + '" data-d="1" title="Позже">▶</button>' +
         '<button class="btn sm danger" data-ldel="' + i + '" title="Удалить">✕</button></div></div>';
     });
     if (!(L.items || []).length) html += '<div class="hint">Логотипов пока нет — нажмите «Добавить логотипы» (PNG с прозрачностью, SVG или JPG).</div>';
-    html += '</div><p class="hint">Логотипы хранятся в этом браузере и сохраняются в резервную копию настроек (.json). Изменения сразу уходят в эфир, если карусель включена.</p>';
+    html += '</div><p class="hint">Пустые поля вокруг логотипа обрезаются автоматически, белый фон JPG становится прозрачным — логотип заполняет плашку. Если какой-то визуально крупнее или мельче остальных, подправьте «Размер». Логотипы хранятся в этом браузере и сохраняются в резервную копию настроек (.json). Изменения сразу уходят в эфир, если карусель включена.</p>';
     ed.innerHTML = html;
     var changed = function () { save(); refreshOnAir(); updatePreview(false); renderList(); renderEditor(); };
     $('#lgInt', ed).oninput = function () { L.interval = Math.max(2, +this.value || 5); save(); refreshOnAir(); updatePreview(false); };
     $('#lgPlate', ed).onchange = function () { L.plate = this.value; changed(); };
     $('#lgAdd', ed).onchange = function () {
       var files = Array.prototype.slice.call(this.files || []);
-      Promise.all(files.map(function (f) { return shrinkImage(f).then(function (src) { return { name: f.name.replace(/\.[^.]+$/, ''), src: src }; }); }))
+      Promise.all(files.map(function (f) { return shrinkImage(f).then(function (src) { return { name: f.name.replace(/\.[^.]+$/, ''), src: src, trim: 1, scale: 100 }; }); }))
         .then(function (arr) {
           L.items = (L.items || []).concat(arr);
           try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) { toast('Не хватает места в браузере для логотипов — используйте файлы поменьше', true); }
           changed();
         }).catch(function (e) { toast(e.message, true); });
     };
+    $$('[data-lsc]', ed).forEach(function (r) {
+      r.oninput = function () {
+        var l = L.items[+r.dataset.lsc]; l.scale = +r.value;
+        r.nextElementSibling.textContent = r.value + '%';
+        r.closest('.lg').querySelector('.lgimg img').style.transform = 'scale(' + (l.scale / 100) + ')';
+        save(); refreshOnAir(); updatePreview(false);
+      };
+    });
     $$('[data-ldel]', ed).forEach(function (b) { b.onclick = function () { L.items.splice(+b.dataset.ldel, 1); changed(); }; });
     $$('[data-lmv]', ed).forEach(function (b) {
       b.onclick = function () {

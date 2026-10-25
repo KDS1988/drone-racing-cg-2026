@@ -397,7 +397,14 @@
     this.root.className = 'logos plate-' + (d.plate || 'white');
     var sameList = JSON.stringify(items) === JSON.stringify(this.items);
     this.items = items; this.interval = Math.max(2, +d.interval || 5);
-    if (!sameList || first) {
+    var srcs = items.map(function (x) { return x && x.src || x; });
+    var sameSrc = JSON.stringify(srcs) === JSON.stringify(this.srcs || []);
+    this.srcs = srcs;
+    if (sameSrc && !first) {      // поменялся только размер — применяем к текущему без смены
+      var cur = this.root.querySelector('img.cur'), ci = items[this.idx];
+      if (cur && ci) cur.style.setProperty('--s', ci.scale || 1);
+    }
+    if ((!sameList && !sameSrc) || first) {
       if (this.idx >= items.length) this.idx = 0;
       this.show(this.idx, true);
     }
@@ -410,15 +417,17 @@
   };
   LogosGfx.prototype.show = function (i, instant) {
     var slot = this.root.querySelector('.slot');
-    var src = this.items[i];
+    var it = this.items[i];
+    var src = it && typeof it === 'object' ? it.src : it;
     var old = slot.querySelector('img.cur');
     if (!src) { slot.innerHTML = ''; return; }
     var img = h('img', 'cur'); img.src = src; img.alt = '';
+    img.style.setProperty('--s', (it && it.scale) || 1);
     slot.appendChild(img);
     if (instant || !old) { if (old) old.remove(); return; }
     old.classList.remove('cur');
-    anim(old, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(-40px) scale(.94)' }], { duration: 450, easing: 'ease-in' }).then(function () { old.remove(); });
-    anim(img, [{ opacity: 0, transform: 'translateX(40px) scale(.94)' }, { opacity: 1, transform: 'none' }], { duration: 550, delay: 120 });
+    anim(old, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '-40px 0' }], { duration: 450, easing: 'ease-in' }).then(function () { old.remove(); });
+    anim(img, [{ opacity: 0, translate: '40px 0' }, { opacity: 1, translate: '0 0' }], { duration: 550, delay: 120 });
     var bar = this.root.querySelector('.bar');
     anim(bar, [{ transform: 'skewX(-14deg) scaleX(0)' }, { transform: 'skewX(-14deg) scaleX(1)' }], { duration: 500, delay: 100 });
   };
