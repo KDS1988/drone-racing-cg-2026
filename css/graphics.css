@@ -146,7 +146,11 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 /* ------------------------------------------------------------------ */
 /* Карусель логотипов 200×120, правый нижний угол (на одной линии с подписью) */
 /* ------------------------------------------------------------------ */
-.logos{position:absolute;right:64px;top:890px;width:200px;height:120px}
+.logos{position:absolute;left:64px;top:890px;width:200px;height:120px}
+/* карусель слева внизу: пока она в эфире, геотитр и нижняя подпись сдвигаются вправо, чтобы не перекрываться */
+.geo,.lower{transition:left .55s cubic-bezier(.65,0,.35,1)}
+#stage.corner-on .geo{left:300px}
+#stage.corner-on .lower{left:300px}
 .logos .box{position:absolute;inset:0;z-index:0}
 .logos .box::before{content:'';position:absolute;inset:0;transform:skewX(var(--skew));background:#fff;box-shadow:0 0 0 2px rgba(60,185,244,.6),0 0 30px rgba(60,185,244,.35);z-index:-1}
 .logos.plate-dark .box::before{background:linear-gradient(160deg,#07214f,#020d23)}

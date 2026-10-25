@@ -510,7 +510,7 @@
   LogosGfx.prototype.update = function (d) { this.set(d, false); return Promise.resolve(); };
   LogosGfx.prototype.in = function () {
     var q = this.root.querySelector.bind(this.root);
-    anim(q('.box'), [{ clipPath: 'inset(-40px -60px -40px 100%)', opacity: .4 }, { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1 }], { duration: 550, easing: EASE_IO });
+    anim(q('.box'), [{ clipPath: 'inset(-40px 100% -40px -60px)', opacity: .4 }, { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1 }], { duration: 550, easing: EASE_IO });
     anim(q('.slot'), [{ opacity: 0, transform: 'scale(.85)' }, { opacity: 1, transform: 'none' }], { duration: 450, delay: 300 });
     return anim(q('.bar'), [{ transform: 'skewX(-14deg) scaleX(0)' }, { transform: 'skewX(-14deg) scaleX(1)' }], { duration: 500, delay: 350 });
   };
@@ -521,7 +521,7 @@
     return anim(this.root, [
       { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
       { opacity: 1, offset: .55 },
-      { clipPath: 'inset(-40px -60px -40px 100%)', opacity: 0, transform: 'translateX(24px)' }
+      { clipPath: 'inset(-40px 100% -40px -60px)', opacity: 0, transform: 'translateX(-24px)' }
     ], { duration: 480, easing: 'cubic-bezier(.45,0,.4,1)' });
   };
   LogosGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
@@ -596,6 +596,7 @@
     layers.center.set(st.center || null);
     layers.bottom.set(st.bottom || null);
     layers.corner.set(st.corner || null);
+    document.getElementById('stage').classList.toggle('corner-on', !!st.corner);
   }
 
   if (!qs.has('pvw')) new CG.Bus(applyState, function () {});

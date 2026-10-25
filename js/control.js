@@ -675,7 +675,7 @@
   }
   function renderLogosEditor(ed) {
     var L = store.logos;
-    var html = '<h3>Карусель логотипов <small>правый нижний угол · по одному логотипу, смена каждые N секунд</small></h3>' +
+    var html = '<h3>Карусель логотипов <small>левый нижний угол · по одному логотипу · геотитр и подпись сдвигаются вправо, смена каждые N секунд</small></h3>' +
       '<div class="opts">' +
       '<div class="grpbox"><span class="lbl">Смена, сек</span><input type="number" min="2" max="60" id="lgInt" value="' + esc(L.interval || 5) + '"></div>' +
       '<div class="grpbox"><span class="lbl">Подложка</span><select id="lgPlate">' +
