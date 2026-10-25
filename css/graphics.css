@@ -156,3 +156,7 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .logos .slot img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transform:scale(var(--s,1))}
 .logos .bar{position:absolute;left:24px;right:24px;bottom:-9px;height:5px;background:var(--red);transform:skewX(var(--skew));transform-origin:left;box-shadow:0 0 12px rgba(249,83,87,.8)}
 .logos.plate-none .bar{display:none}
+
+/* плавная подстройка ширины колонок, когда меняются данные в эфире */
+.tbl.resizing{transition:width .6s cubic-bezier(.65,0,.35,1),margin-left .6s cubic-bezier(.65,0,.35,1)}
+.tbl.resizing .cols,.tbl.resizing .row{transition:grid-template-columns .6s cubic-bezier(.65,0,.35,1)}

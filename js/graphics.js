@@ -57,7 +57,11 @@
     var guard = 60;
     while (el.scrollWidth > el.clientWidth + 1 && fs > min && guard--) { fs -= 1; el.style.fontSize = fs + 'px'; }
   }
-  var fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+  // заранее грузим все начертания, которые используются в титрах, — иначе первая таблица меряется запасным шрифтом
+  var fontsReady = (document.fonts && document.fonts.load) ? Promise.all(
+    ['500', '600', '700', '800'].map(function (w) { return document.fonts.load(w + ' 20px Montserrat', 'АБВ abc 0123|'); })
+      .concat(['400', '700', '900'].map(function (w) { return document.fonts.load(w + ' 20px Unbounded', 'АБВ abc 012'); }))
+  ).then(function () { return document.fonts.ready; }, function () {}) : Promise.resolve();
 
   var GEO_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 22s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12z" fill="#fff"/><circle cx="12" cy="10" r="2.8" fill="#1d6fe0"/></svg>';
 
@@ -206,20 +210,81 @@
     this.data = null;
     this.build(item.data);
   }
+  // ширина колонок по содержимому: меряем реальным рендером (те же шрифты и классы, что в эфире)
+  var measurer = null;
+  function getMeasurer() {
+    if (measurer) return measurer;
+    measurer = h('div', 'tbl measure');
+    measurer.setAttribute('aria-hidden', 'true');
+    measurer.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;width:auto;pointer-events:none';
+    measurer.innerHTML = '<div class="cols" style="display:block;height:auto"></div><div class="row" style="display:block;height:auto"></div>';
+    document.body.appendChild(measurer);
+    return measurer;
+  }
+  var MIN_COL = { idx: 64, rating: 96, rank: 80, okrug: 92, region: 160, place: 96, place2: 110, color: 92, channel: 84, time: 96, total: 96, score: 64, laps: 80, num: 80 };
+  var MAX_W = 1840;
+  TableGfx.prototype.measure = function (d, fs) {
+    var m = getMeasurer(), self = this;
+    m.style.setProperty('--fs', fs + 'px');
+    var rowEl = m.querySelector('.row'), colsEl = m.querySelector('.cols');
+    return d.columns.map(function (c) {
+      // заголовок: переносится по словам — меряем самое длинное слово
+      var hw = 0;
+      String(c.label || '').split(/\s+/).forEach(function (w) {
+        colsEl.innerHTML = '<div style="display:inline-block;padding:0 8px;white-space:nowrap">' + esc(w) + '</div>';
+        hw = Math.max(hw, colsEl.firstChild.offsetWidth);
+      });
+      var vw = 0;
+      if (c.role !== 'color' && c.role !== 'place') {
+        d.rows.forEach(function (r) {
+          var v = r.cells[c.key];
+          if (v == null || v === '') return;
+          rowEl.innerHTML = '<div class="' + self.cellClass(c) + '" style="display:inline-block;overflow:visible">' + self.cellHTML(c, v) + '</div>';
+          vw = Math.max(vw, rowEl.firstChild.offsetWidth);
+        });
+      }
+      return { hw: hw + 4, vw: vw ? vw + 14 : 0 };
+    });
+  };
   TableGfx.prototype.layout = function (d) {
-    var pilotW = d.team ? 610 : 440;
-    var widths = d.columns.map(function (c) { return c.role === 'pilot' ? pilotW : (ROLE_W[c.role] || 122); });
-    var W = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
-    // узкие таблицы (2–3 колонки) расширяем до минимума, чтобы шапка помещалась
-    var MIN_W = 1100, pi = d.columns.map(function (c) { return c.role; }).indexOf('pilot');
-    if (W < MIN_W) { widths[pi >= 0 ? pi : widths.length - 1] += MIN_W - W; W = MIN_W; }
     var n = Math.max(1, d.rows.length);
     var avail = STAGE_H - TOP_MIN * 2 - HEAD_H - COLS_H;
     var rh = Math.max(28, Math.min(60, Math.floor(avail / n) - GAP));
     var fs = Math.max(15, Math.min(25, Math.round(rh * 0.47)));
+    var ms = this.measure(d, fs);
+    var pi = -1;
+    var widths = d.columns.map(function (c, i) {
+      if (c.role === 'pilot') { pi = i; return 0; }
+      var min = MIN_COL[c.role] || 80;
+      if (c.role === 'color' || c.role === 'place') return Math.max(ROLE_W[c.role] || min, ms[i].hw);
+      return Math.ceil(Math.max(min, ms[i].hw, ms[i].vw));
+    });
+    var other = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
+    if (pi >= 0) {
+      // пилот: по самому длинному имени, но не шире, чем позволяет экран (длинные имена ужмёт fit)
+      var want = Math.max(d.team ? 420 : 300, ms[pi].hw, ms[pi].vw);
+      widths[pi] = Math.ceil(Math.min(want, d.team ? 700 : 520, Math.max(280, MAX_W - other)));
+    }
+    var W = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
+    // если всё равно не влезает — пропорционально ужимаем остальные колонки
+    if (W > MAX_W) {
+      var k = (MAX_W - 40 - (pi >= 0 ? widths[pi] : 0)) / (W - 40 - (pi >= 0 ? widths[pi] : 0));
+      widths = widths.map(function (w, i) { return i === pi ? w : Math.floor(w * k); });
+      W = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
+    }
+    // узкие таблицы расширяем до минимума, чтобы шапка помещалась
+    var MIN_W = 1100;
+    if (W < MIN_W) { widths[pi >= 0 ? pi : widths.length - 1] += MIN_W - W; W = MIN_W; }
     var H = HEAD_H + COLS_H + (d.rows.length ? n * (rh + GAP) : 80);
     var top = Math.max(TOP_MIN, Math.round((STAGE_H - H) / 2));
     return { widths: widths, W: W, rh: rh, fs: fs, top: top, tpl: widths.map(function (w) { return w + 'px'; }).join(' ') };
+  };
+  TableGfx.prototype.applyWidths = function (L) {
+    var root = this.root;
+    root.style.width = L.W + 'px';
+    root.style.marginLeft = (-L.W / 2) + 'px';
+    root.querySelector('.cols').style.gridTemplateColumns = L.tpl;
+    Array.prototype.forEach.call(root.querySelectorAll('.rows .row'), function (r) { r.style.gridTemplateColumns = L.tpl; });
   };
   TableGfx.prototype.sig = function (d) {
     return d.columns.map(function (c) { return c.key + ':' + c.label; }).join(',') + '|' + d.page + '/' + d.pages + '|' + d.team;
@@ -280,6 +345,9 @@
     if (!d.rows.length) rows.appendChild(h('div', 'empty', esc(d.emptyText || 'ДАННЫЕ ОЖИДАЮТСЯ')));
     d.rows.forEach(function (r) { rows.appendChild(self.makeRow(d, r)); });
     fontsReady.then(function () {
+      if (self.data !== d) return;
+      var L2 = self.layout(d);
+      if (L2.tpl !== self.L.tpl) { self.L = L2; self.applyWidths(L2); }
       var rs = rows.querySelectorAll('.row'); for (var i = 0; i < rs.length; i++) self.fitRow(rs[i]);
       fit(root.querySelector('.t1'), 0.55); fit(root.querySelector('.t2'), 0.6);
     });
@@ -333,8 +401,8 @@
     ], { duration: 520, delay: d, easing: 'cubic-bezier(.45,0,.4,1)' });
   };
   TableGfx.prototype.update = function (d) {
-    var self = this, old = this.data;
-    if (this.sig(old) !== this.sig(d) || this.layout(d).rh !== this.L.rh) {
+    var self = this, old = this.data, nl = this.layout(d);
+    if (this.sig(old) !== this.sig(d) || nl.rh !== this.L.rh) {
       // смена страницы/структуры: строки уходят, перестраиваем, строки приходят
       return this.rowsOut().then(function () {
         self.build(d);
@@ -342,6 +410,8 @@
       });
     }
     this.setHead(d);
+    var widthsChanged = nl.tpl !== this.L.tpl;
+    if (widthsChanged) { this.root.classList.add('resizing'); this.L = nl; this.applyWidths(nl); setTimeout(function () { self.root.classList.remove('resizing'); }, 700); }
     var rowsEl = this.root.querySelector('.rows');
     var emptyEl = rowsEl.querySelector('.empty'); if (emptyEl && d.rows.length) emptyEl.remove();
     var map = {}; Array.prototype.forEach.call(rowsEl.querySelectorAll('.row'), function (r) { map[r.dataset.id] = r; });
@@ -375,6 +445,7 @@
       var dy = first[k] - map[k].getBoundingClientRect().top;
       if (Math.abs(dy) > 1) anim(map[k], [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }], { duration: 600, easing: EASE_IO });
     });
+    if (widthsChanged) setTimeout(function () { Array.prototype.forEach.call(rowsEl.querySelectorAll('.row'), function (r) { self.fitRow(r); }); }, 650);
     added.forEach(function (el, i) { self.fitRow(el); anim(el, [{ opacity: 0, transform: 'translateX(-90px)' }, { opacity: 1, transform: 'none' }], { duration: 450, delay: i * 40 }); });
     this.data = d;
     return Promise.resolve();
