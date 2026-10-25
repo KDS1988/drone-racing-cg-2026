@@ -331,7 +331,8 @@
     return {
       title: t.title != null && t.title !== '' ? t.title : (item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
       subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : sheetSubtitle(s),
-      team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages
+      team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages,
+      pos: { h: t.posH || 'c', v: t.posV || 'c', scale: +t.scale || 100 }
     };
   }
 
@@ -744,6 +745,12 @@
       '<label class="chk"><input type="checkbox" data-t="hideEmpty"' + (t.hideEmpty ? ' checked' : '') + '>скрывать строки без пилота</label>' +
       '<label class="chk"><input type="checkbox" data-t="hideEmptyCols"' + (t.hideEmptyCols !== false ? ' checked' : '') + '>скрывать пустые колонки</label>' +
       '</div>';
+    var pbtn = function (k, val, txt, tip) { var cur = t[k] || 'c'; return '<button class="btn sm' + (cur === val ? ' on' : '') + '" data-pos="' + k + '" data-v="' + val + '" title="' + tip + '">' + txt + '</button>'; };
+    html += '<div class="opts posopts"><span class="lbl">Положение в кадре:</span>' +
+      '<div class="grpbox seg">' + pbtn('posH', 'l', '◧ слева', 'Прижать к левому краю') + pbtn('posH', 'c', '▣ центр', 'По центру') + pbtn('posH', 'r', 'справа ◨', 'Прижать к правому краю') + '</div>' +
+      '<div class="grpbox seg">' + pbtn('posV', 't', '⬒ верх', 'Прижать к верху') + pbtn('posV', 'c', 'середина', 'По центру') + pbtn('posV', 'b', '⬓ низ', 'Прижать к низу') + '</div>' +
+      '<div class="grpbox"><span class="lbl">Масштаб</span><input type="range" min="50" max="100" step="5" id="tScale" value="' + esc(t.scale || 100) + '"><b id="tScaleV">' + esc(t.scale || 100) + '%</b></div>' +
+      '<button class="btn sm" id="posReset" title="Центр, 100%">сброс</button></div>';
     html += '<div class="opts"><span class="lbl">Колонки в эфире:</span>' + raw.columns.map(function (c) {
       var on = !hiddenCols[c.key];
       return '<label class="chk' + (on ? '' : ' off') + '"><input type="checkbox" data-col="' + c.key + '"' + (on ? ' checked' : '') + '>' + esc(c.label) + '</label>';
@@ -796,6 +803,11 @@
         onEdited(); renderEditor();
       });
     });
+    $$('[data-pos]', ed).forEach(function (bt) {
+      bt.onclick = function () { t[bt.dataset.pos] = bt.dataset.v; onEdited(); renderEditor(); };
+    });
+    $('#tScale', ed).oninput = function () { t.scale = +this.value; $('#tScaleV', ed).textContent = this.value + '%'; onEdited(); };
+    $('#posReset', ed).onclick = function () { t.posH = 'c'; t.posV = 'c'; t.scale = 100; onEdited(); renderEditor(); };
     $('#colsReset', ed).onclick = function () { t.hiddenCols = null; onEdited(); renderEditor(); };
     $$('[data-vis]', ed).forEach(function (inp) {
       inp.addEventListener('change', function () {

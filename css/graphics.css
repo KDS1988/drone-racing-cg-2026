@@ -164,3 +164,4 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 /* плавная подстройка ширины колонок, когда меняются данные в эфире */
 .tbl.resizing{transition:width .6s cubic-bezier(.65,0,.35,1),margin-left .6s cubic-bezier(.65,0,.35,1)}
 .tbl.resizing .cols,.tbl.resizing .row{transition:grid-template-columns .6s cubic-bezier(.65,0,.35,1)}
+.tbl.moving{transition:left .6s cubic-bezier(.65,0,.35,1),top .6s cubic-bezier(.65,0,.35,1),transform .6s cubic-bezier(.65,0,.35,1)}

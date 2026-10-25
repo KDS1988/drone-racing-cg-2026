@@ -279,10 +279,28 @@
     var top = Math.max(TOP_MIN, Math.round((STAGE_H - H) / 2));
     return { widths: widths, W: W, rh: rh, fs: fs, top: top, tpl: widths.map(function (w) { return w + 'px'; }).join(' ') };
   };
+  // положение таблицы в кадре: слева/центр/справа × верх/середина/низ + масштаб (для больших таблиц)
+  var SAFE_X = 60, SAFE_Y = 40;
+  TableGfx.prototype.applyPos = function (d, animate) {
+    var root = this.root, L = this.L, p = (d && d.pos) || {};
+    var s = Math.max(0.3, Math.min(1, (+p.scale || 100) / 100));
+    var W = L.W * s, H = (root.offsetHeight || (STAGE_H - 2 * L.top)) * s;
+    var left = p.h === 'l' ? SAFE_X : p.h === 'r' ? STAGE_W - SAFE_X - W : (STAGE_W - W) / 2;
+    var top = p.v === 't' ? SAFE_Y : p.v === 'b' ? STAGE_H - SAFE_Y - H : (s === 1 ? L.top : (STAGE_H - H) / 2);
+    var key = [Math.round(left), Math.round(top), s].join(',');
+    if (key === this.posKey) return;
+    this.posKey = key;
+    if (animate) { root.classList.add('moving'); clearTimeout(this.mvT); this.mvT = setTimeout(function () { root.classList.remove('moving'); }, 700); }
+    root.style.marginLeft = '0px';
+    root.style.left = Math.round(left) + 'px';
+    root.style.top = Math.round(top) + 'px';
+    root.style.transformOrigin = '0 0';
+    root.style.transform = s === 1 ? '' : 'scale(' + s + ')';
+  };
   TableGfx.prototype.applyWidths = function (L) {
     var root = this.root;
     root.style.width = L.W + 'px';
-    root.style.marginLeft = (-L.W / 2) + 'px';
+    this.posKey = null; this.applyPos(this.data, true);
     root.querySelector('.cols').style.gridTemplateColumns = L.tpl;
     Array.prototype.forEach.call(root.querySelectorAll('.rows .row'), function (r) { r.style.gridTemplateColumns = L.tpl; });
   };
@@ -331,8 +349,6 @@
     this.L = this.layout(d);
     var L = this.L, root = this.root, self = this;
     root.style.width = L.W + 'px';
-    root.style.marginLeft = (-L.W / 2) + 'px';
-    root.style.top = L.top + 'px';
     root.style.setProperty('--rh', L.rh + 'px');
     root.style.setProperty('--fs', L.fs + 'px');
     root.style.setProperty('--gap', GAP + 'px');
@@ -344,6 +360,7 @@
     rows.innerHTML = '';
     if (!d.rows.length) rows.appendChild(h('div', 'empty', esc(d.emptyText || 'ДАННЫЕ ОЖИДАЮТСЯ')));
     d.rows.forEach(function (r) { rows.appendChild(self.makeRow(d, r)); });
+    this.posKey = null; this.applyPos(d, false);
     fontsReady.then(function () {
       if (self.data !== d) return;
       var L2 = self.layout(d);
@@ -411,6 +428,8 @@
     }
     this.setHead(d);
     var widthsChanged = nl.tpl !== this.L.tpl;
+    this.data = d;
+    if (!widthsChanged) this.applyPos(d, true);
     if (widthsChanged) { this.root.classList.add('resizing'); this.L = nl; this.applyWidths(nl); setTimeout(function () { self.root.classList.remove('resizing'); }, 700); }
     var rowsEl = this.root.querySelector('.rows');
     var emptyEl = rowsEl.querySelector('.empty'); if (emptyEl && d.rows.length) emptyEl.remove();

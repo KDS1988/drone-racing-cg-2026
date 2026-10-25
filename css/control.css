@@ -140,3 +140,8 @@ code{background:#0c1630;padding:1px 5px;border-radius:4px}
 .lgsc .lbl{font-size:10px;color:var(--mute);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .lgsc input{flex:1;padding:0}
 .lgsc b{font-size:11px;width:34px;text-align:right}
+.seg{gap:0}
+.seg .btn{border-radius:0;margin-left:-1px}
+.seg .btn:first-child{border-radius:6px 0 0 6px}.seg .btn:last-child{border-radius:0 6px 6px 0}
+.btn.on{background:var(--blue2);border-color:var(--blue);color:#fff}
+.posopts input[type=range]{width:120px;padding:0}
