@@ -517,6 +517,7 @@
   };
 
   return {
+    VERSION: '20261025d',   // меняется при каждом выпуске (и в ?v= в html) — графика сама перезагрузится, если пульт новее
     DEFAULT_CONFIG: DEFAULT_CONFIG, SHEET_CATALOG: SHEET_CATALOG, sheetFromName: sheetFromName,
     sheetCsvUrl: sheetCsvUrl,
     parseCSV: parseCSV,

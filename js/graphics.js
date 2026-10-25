@@ -581,8 +581,18 @@
 
   var layers = { center: new Layer(document.getElementById('L-center')), bottom: new Layer(document.getElementById('L-bottom')), corner: new Layer(document.getElementById('L-corner')) };
 
+  // пульт обновлён, а графика в vMix открыта со старой версией — перезагружаемся один раз (минуя кэш GitHub Pages)
+  function checkVersion(st) {
+    if (qs.has('pvw') || !st || !st.ver || !CG.VERSION || String(st.ver) <= CG.VERSION) return false;
+    var k = 'cg-reload-' + st.ver;
+    try { if (sessionStorage.getItem(k)) return false; sessionStorage.setItem(k, '1'); } catch (e) { return false; }
+    var u = new URL(location.href); u.searchParams.set('_v', st.ver);
+    location.replace(u.toString());
+    return true;
+  }
   function applyState(st) {
     if (!st) return;
+    if (checkVersion(st)) return;
     layers.center.set(st.center || null);
     layers.bottom.set(st.bottom || null);
     layers.corner.set(st.corner || null);

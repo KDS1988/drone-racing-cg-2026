@@ -365,7 +365,7 @@
   function sendState() {
     clearTimeout(sendTimer);
     sendTimer = setTimeout(function () {
-      if (bus) bus.send({ rev: Date.now(), center: state.center, bottom: state.bottom, corner: state.corner });
+      if (bus) bus.send({ rev: Date.now(), ver: CG.VERSION, center: state.center, bottom: state.bottom, corner: state.corner });
     }, 30);
     renderOnAir();
   }
