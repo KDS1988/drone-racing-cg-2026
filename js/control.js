@@ -25,7 +25,8 @@
       { name: 'Имя ФАМИЛИЯ', role: 'Представитель Федерации гонок дронов России' }
     ],
     tables: {},           // itemId → { title, subtitle, rpp, page, sort, hideEmpty, hiddenCols:{}, hiddenRows:{}, ovr:{rowId:{col:val}}, flip }
-    selected: 'start'
+    selected: 'start',
+    logos: { items: [], interval: 5, plate: 'white' }   // карусель логотипов (правый нижний угол)
   };
   var store;
   try { store = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { store = {}; }
@@ -33,6 +34,8 @@
   store.config = Object.assign(clone(CG.DEFAULT_CONFIG), store.config || {});
   // переход на полный каталог листов (75 / 200 / 330 / ТС)
   if (store.config.sheetsVersion !== CG.DEFAULT_CONFIG.sheetsVersion || !Array.isArray(store.config.sheets)) {
+    // таблица переехала: «Первенство» → «Чемпионат России 2026»
+    if (store.config.sheetId === '1np8-5BWWoadGkBZ2pqfEHBzXOesoQN1hMA-1ylbv8Xo') store.config.sheetId = CG.DEFAULT_CONFIG.sheetId;
     store.config.sheets = clone(CG.DEFAULT_CONFIG.sheets);
     store.config.sheetsVersion = CG.DEFAULT_CONFIG.sheetsVersion;
     store.tables = {};
@@ -41,6 +44,7 @@
     if (!store.config.sheets.some(function (s) { return s.key === d.key; })) store.config.sheets.push(clone(d));
   });
   if (!store.collapsed) store.collapsed = {};
+  if (!store.logos || !Array.isArray(store.logos.items)) store.logos = { items: [], interval: 5, plate: 'white' };
   var saveTimer = null;
   function save() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }, 250); }
   var cfg = store.config;
@@ -143,7 +147,7 @@
 
   function hotSheets() {
     var hot = {};
-    [state.center, state.bottom].forEach(function (it) { if (it && it.sheet) hot[it.sheet] = 1; });
+    [state.center, state.bottom, state.corner].forEach(function (it) { if (it && it.sheet) hot[it.sheet] = 1; });
     var sel = itemById(store.selected); if (sel && sel.sheet) hot[sel.sheet] = 1;
     return hot;
   }
@@ -175,7 +179,8 @@
   function catalog() {
     var items = [
       { id: 'start', type: 'start', layer: 'center', label: 'Стартовый титр', group: 'common' },
-      { id: 'geo', type: 'geo', layer: 'bottom', label: 'Геотитр', group: 'common' }
+      { id: 'geo', type: 'geo', layer: 'bottom', label: 'Геотитр', group: 'common' },
+      { id: 'logos', type: 'logos', layer: 'corner', label: 'Карусель логотипов', group: 'common', count: (store.logos.items || []).length }
     ];
     store.lowers.forEach(function (l, i) {
       items.push({ id: 'lower:' + i, type: 'lower', layer: 'bottom', label: 'Подпись: ' + (l.name || '—'), group: 'lowers', idx: i });
@@ -234,12 +239,13 @@
       if (has.okrug != null) cols.push({ key: 'okrug', label: 'Округ', role: 'okrug' });
       if (team && has.laps != null) cols.push({ key: 'laps', label: 'Круги квал.', role: 'laps' });
       if (has.time != null) cols.push({ key: 'time', label: 'Время квал.', role: 'time' });
+      if (team && has.teamTime != null) cols.push({ key: 'teamTime', label: 'Время команды', role: 'time' });
       if (has.placeQ != null) cols.push({ key: 'placeQ', label: 'Место квал.', role: 'place2' });
       if (has.placeG != null) cols.push({ key: 'placeG', label: 'Место групп.', role: 'place2' });
       var rows = (p.quali ? p.quali.items : []).map(function (it) {
         return { id: it.rowId, cells: {
           idx: it.idx, rating: it.rating, pilot: it.pilotsRaw.map(function (x) { return CG.formatName(x, known); }).join(' | '),
-          okrug: it.okrug, laps: it.laps, time: it.time, placeQ: it.placeQ, placeG: it.placeG } };
+          okrug: it.okrug, laps: it.laps, time: it.time, teamTime: it.teamTime, placeQ: it.placeQ, placeG: it.placeG } };
       });
       return { columns: cols, rows: rows, title: 'Общая таблица', defaultHidden: {}, team: team };
     }
@@ -263,6 +269,10 @@
   var ZERO_RE = /^0+([.,:]0+)*$/;
   function displayVal(col, v) {
     v = v == null ? '' : String(v).trim();
+    if (col.role !== 'pilot' && v.indexOf(' | ') >= 0) {   // значения двух пилотов команды
+      var parts = v.split(' | ').map(function (x) { var d = displayVal(col, x); return d; });
+      return parts.some(Boolean) ? parts.map(function (x) { return x || '—'; }).join(' | ') : '';
+    }
     if (CG.isPlaceholder(v)) return '';
     if ((col.role === 'time' || col.role === 'total' || col.role === 'laps' || col.role === 'score') && ZERO_RE.test(v)) return '';
     return v;
@@ -330,6 +340,7 @@
     if (item.type === 'start') return clone(store.start);
     if (item.type === 'geo') return clone(store.geo);
     if (item.type === 'lower') return clone(store.lowers[item.idx] || {});
+    if (item.type === 'logos') return { items: (store.logos.items || []).map(function (l) { return l.src; }), interval: +store.logos.interval || 5, plate: store.logos.plate || 'white' };
     if (item.type === 'table') return tablePayload(item);
     return null;
   }
@@ -337,7 +348,7 @@
   /* =================================================================== */
   /* Состояние эфира                                                     */
   /* =================================================================== */
-  var state = { center: null, bottom: null };
+  var state = { center: null, bottom: null, corner: null };
   var takeN = 1;
   var bus = null, sendTimer = null;
 
@@ -354,7 +365,7 @@
   function sendState() {
     clearTimeout(sendTimer);
     sendTimer = setTimeout(function () {
-      if (bus) bus.send({ rev: Date.now(), center: state.center, bottom: state.bottom });
+      if (bus) bus.send({ rev: Date.now(), center: state.center, bottom: state.bottom, corner: state.corner });
     }, 30);
     renderOnAir();
   }
@@ -367,13 +378,13 @@
     sendState(); renderList(); setupFlip();
   }
   function out(layer) { state[layer] = null; sendState(); renderList(); setupFlip(); }
-  function isOnAir(id) { return (state.center && state.center.key === id) || (state.bottom && state.bottom.key === id); }
+  function isOnAir(id) { return ['center', 'bottom', 'corner'].some(function (L) { return state[L] && state[L].key === id; }); }
   function toggle(id) { var it = itemById(id); if (!it) return; if (isOnAir(id)) out(it.layer); else take(id); }
 
   /** пересчитать данные титров в эфире (после правки / обновления таблицы) */
   function refreshOnAir() {
     var changed = false;
-    ['center', 'bottom'].forEach(function (L) {
+    ['center', 'bottom', 'corner'].forEach(function (L) {
       var cur = state[L]; if (!cur) return;
       var item = itemById(cur.key); if (!item) return;
       var d = payloadFor(item); if (!d) return;
@@ -405,7 +416,7 @@
     var item = itemById(store.selected);
     $('#pvwName').textContent = item ? itemLabel(item) : '—';
     if (!pvwReady || !pvwFrame.contentWindow || !pvwFrame.contentWindow.__cgApply) return;
-    var st = { center: null, bottom: null };
+    var st = { center: null, bottom: null, corner: null };
     if (item) {
       var d = payloadFor(item);
       if (d) {
@@ -501,7 +512,8 @@
   function renderOnAir() {
     $('#oaCenter').textContent = state.center ? state.center.label || state.center.key : '—';
     $('#oaBottom').textContent = state.bottom ? state.bottom.label || state.bottom.key : '—';
-    $('#pgmName').textContent = [state.center && state.center.label, state.bottom && state.bottom.label].filter(Boolean).join('  +  ') || '—';
+    $('#oaCorner').textContent = state.corner ? state.corner.label || state.corner.key : '—';
+    $('#pgmName').textContent = [state.center && state.center.label, state.bottom && state.bottom.label, state.corner && state.corner.label].filter(Boolean).join('  +  ') || '—';
     var sel = itemById(store.selected);
     var b = $('#btnTake');
     if (sel && isOnAir(sel.id)) { b.textContent = '■ OUT — СНЯТЬ'; b.className = 'btn danger'; }
@@ -532,7 +544,8 @@
       ed.innerHTML = '<h3>Геотитр <small>650×100, внизу слева</small></h3><div class="fields">' +
         field('Город', 'city', store.geo.city) + field('Дата', 'date', store.geo.date) + '</div>';
       bindFields(ed, store.geo);
-    } else if (item.type === 'table') renderTableEditor(ed, item);
+    } else if (item.type === 'logos') renderLogosEditor(ed);
+    else if (item.type === 'table') renderTableEditor(ed, item);
     renderOnAir();
   }
   function bindFields(ed, obj) {
@@ -594,6 +607,66 @@
     if (!state.bottom || !/^lower:/.test(state.bottom.key)) return;
     var k = +state.bottom.key.split(':')[1];
     if (k === i) state.bottom.key = 'lower:' + j; else if (k === j) state.bottom.key = 'lower:' + i;
+  }
+
+  /* ---------- карусель логотипов ---------- */
+  function shrinkImage(file) {
+    // уменьшаем до 600×360 и сохраняем PNG (прозрачность сохраняется) — чтобы быстро передавалось в графику
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var img = new Image();
+        img.onload = function () {
+          var k = Math.min(1, 600 / img.width, 360 / img.height);
+          var cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          res(cv.toDataURL('image/png'));
+        };
+        img.onerror = function () { rej(new Error('не картинка: ' + file.name)); };
+        img.src = fr.result;
+      };
+      fr.onerror = rej;
+      fr.readAsDataURL(file);
+    });
+  }
+  function renderLogosEditor(ed) {
+    var L = store.logos;
+    var html = '<h3>Карусель логотипов <small>правый нижний угол · по одному логотипу, смена каждые N секунд</small></h3>' +
+      '<div class="opts">' +
+      '<div class="grpbox"><span class="lbl">Смена, сек</span><input type="number" min="2" max="60" id="lgInt" value="' + esc(L.interval || 5) + '"></div>' +
+      '<div class="grpbox"><span class="lbl">Подложка</span><select id="lgPlate">' +
+      [['white', 'белая'], ['dark', 'тёмная'], ['none', 'без подложки']].map(function (o) { return '<option value="' + o[0] + '"' + (L.plate === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+      '</select></div>' +
+      '<label class="btn file">+ Добавить логотипы<input type="file" id="lgAdd" accept="image/*" multiple hidden></label>' +
+      '</div><div class="lglist">';
+    (L.items || []).forEach(function (l, i) {
+      html += '<div class="lg"><div class="lgimg ' + esc(L.plate || 'white') + '"><img src="' + l.src + '" alt=""></div><div class="lgname" title="' + esc(l.name) + '">' + esc(l.name) + '</div>' +
+        '<div class="row"><button class="btn sm" data-lmv="' + i + '" data-d="-1" title="Раньше">◀</button><button class="btn sm" data-lmv="' + i + '" data-d="1" title="Позже">▶</button>' +
+        '<button class="btn sm danger" data-ldel="' + i + '" title="Удалить">✕</button></div></div>';
+    });
+    if (!(L.items || []).length) html += '<div class="hint">Логотипов пока нет — нажмите «Добавить логотипы» (PNG с прозрачностью, SVG или JPG).</div>';
+    html += '</div><p class="hint">Логотипы хранятся в этом браузере и сохраняются в резервную копию настроек (.json). Изменения сразу уходят в эфир, если карусель включена.</p>';
+    ed.innerHTML = html;
+    var changed = function () { save(); refreshOnAir(); updatePreview(false); renderList(); renderEditor(); };
+    $('#lgInt', ed).oninput = function () { L.interval = Math.max(2, +this.value || 5); save(); refreshOnAir(); updatePreview(false); };
+    $('#lgPlate', ed).onchange = function () { L.plate = this.value; changed(); };
+    $('#lgAdd', ed).onchange = function () {
+      var files = Array.prototype.slice.call(this.files || []);
+      Promise.all(files.map(function (f) { return shrinkImage(f).then(function (src) { return { name: f.name.replace(/\.[^.]+$/, ''), src: src }; }); }))
+        .then(function (arr) {
+          L.items = (L.items || []).concat(arr);
+          try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) { toast('Не хватает места в браузере для логотипов — используйте файлы поменьше', true); }
+          changed();
+        }).catch(function (e) { toast(e.message, true); });
+    };
+    $$('[data-ldel]', ed).forEach(function (b) { b.onclick = function () { L.items.splice(+b.dataset.ldel, 1); changed(); }; });
+    $$('[data-lmv]', ed).forEach(function (b) {
+      b.onclick = function () {
+        var i = +b.dataset.lmv, j = i + (+b.dataset.d);
+        if (j < 0 || j >= L.items.length) return;
+        var t = L.items[i]; L.items[i] = L.items[j]; L.items[j] = t; changed();
+      };
+    });
   }
 
   function renderTableEditor(ed, item) {
@@ -730,7 +803,7 @@
   /* =================================================================== */
   $('#btnTake').onclick = function () { var it = itemById(store.selected); if (it) toggle(it.id); };
   $$('[data-out]').forEach(function (b) { b.onclick = function () { out(b.dataset.out); }; });
-  $('#btnClear').onclick = function () { state.center = null; state.bottom = null; sendState(); renderList(); setupFlip(); };
+  $('#btnClear').onclick = function () { state.center = null; state.bottom = null; state.corner = null; sendState(); renderList(); setupFlip(); };
   $('#btnReload').onclick = reloadAll;
   $('#btnLogout').onclick = function () { if (confirm('Выйти из пульта на этом компьютере?')) CGAuth.logout(); };
   $('#srcSel').value = cfg.source;
@@ -821,7 +894,7 @@
     // принимаем только при первом подключении (пульт — источник истины)
     if (!bus._gotInitial) {
       bus._gotInitial = true;
-      state.center = st.center || null; state.bottom = st.bottom || null;
+      state.center = st.center || null; state.bottom = st.bottom || null; state.corner = st.corner || null;
       renderList(); renderOnAir(); setupFlip();
     }
   }, syncStatus, useFirebase() ? { fb: CG.normFbUrl(cfg.fbUrl), room: CG.normRoom(cfg.room) } : null);

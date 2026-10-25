@@ -142,3 +142,16 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 @keyframes flash{0%{background:rgba(60,185,244,.65);color:#fff}100%{background:rgba(60,185,244,0)}}
 .tbl .empty{font-family:var(--font-head);font-size:20px;letter-spacing:.2em;color:#9fc6e6;text-align:center;padding:26px 0;position:relative;z-index:0}
 .tbl .empty::before{content:'';position:absolute;inset:0;transform:skewX(var(--skew));background:var(--plate);z-index:-1}
+
+/* ------------------------------------------------------------------ */
+/* Карусель логотипов 200×120, правый нижний угол (на одной линии с подписью) */
+/* ------------------------------------------------------------------ */
+.logos{position:absolute;right:64px;top:890px;width:200px;height:120px}
+.logos .box{position:absolute;inset:0;z-index:0}
+.logos .box::before{content:'';position:absolute;inset:0;transform:skewX(var(--skew));background:#fff;box-shadow:0 0 0 2px rgba(60,185,244,.6),0 0 30px rgba(60,185,244,.35);z-index:-1}
+.logos.plate-dark .box::before{background:linear-gradient(160deg,#07214f,#020d23)}
+.logos.plate-none .box::before{display:none}
+.logos .slot{position:absolute;inset:12px 22px;display:flex;align-items:center;justify-content:center}
+.logos .slot img{position:absolute;max-width:100%;max-height:100%;object-fit:contain}
+.logos .bar{position:absolute;left:24px;right:24px;bottom:-9px;height:5px;background:var(--red);transform:skewX(var(--skew));transform-origin:left;box-shadow:0 0 12px rgba(249,83,87,.8)}
+.logos.plate-none .bar{display:none}

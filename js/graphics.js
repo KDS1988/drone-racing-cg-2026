@@ -381,7 +381,72 @@
   };
   TableGfx.prototype.destroy = function () { this.root.remove(); };
 
-  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx };
+  /* =================================================================== */
+  /* Карусель логотипов — правый нижний угол                             */
+  /* =================================================================== */
+  function LogosGfx(parent, item) {
+    this.root = h('div', 'logos');
+    this.root.innerHTML = '<div class="box"><div class="slot"></div></div><div class="bar"></div>';
+    parent.appendChild(this.root);
+    this.idx = 0; this.timer = null; this.items = [];
+    this.set(item.data, true);
+  }
+  LogosGfx.prototype.set = function (d, first) {
+    d = d || {};
+    var items = (d.items || []).filter(Boolean);
+    this.root.className = 'logos plate-' + (d.plate || 'white');
+    var sameList = JSON.stringify(items) === JSON.stringify(this.items);
+    this.items = items; this.interval = Math.max(2, +d.interval || 5);
+    if (!sameList || first) {
+      if (this.idx >= items.length) this.idx = 0;
+      this.show(this.idx, true);
+    }
+    this.restart();
+  };
+  LogosGfx.prototype.restart = function () {
+    var self = this;
+    clearInterval(this.timer); this.timer = null;
+    if (this.items.length > 1) this.timer = setInterval(function () { self.next(); }, this.interval * 1000);
+  };
+  LogosGfx.prototype.show = function (i, instant) {
+    var slot = this.root.querySelector('.slot');
+    var src = this.items[i];
+    var old = slot.querySelector('img.cur');
+    if (!src) { slot.innerHTML = ''; return; }
+    var img = h('img', 'cur'); img.src = src; img.alt = '';
+    slot.appendChild(img);
+    if (instant || !old) { if (old) old.remove(); return; }
+    old.classList.remove('cur');
+    anim(old, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(-40px) scale(.94)' }], { duration: 450, easing: 'ease-in' }).then(function () { old.remove(); });
+    anim(img, [{ opacity: 0, transform: 'translateX(40px) scale(.94)' }, { opacity: 1, transform: 'none' }], { duration: 550, delay: 120 });
+    var bar = this.root.querySelector('.bar');
+    anim(bar, [{ transform: 'skewX(-14deg) scaleX(0)' }, { transform: 'skewX(-14deg) scaleX(1)' }], { duration: 500, delay: 100 });
+  };
+  LogosGfx.prototype.next = function () {
+    if (this.items.length < 2) return;
+    this.idx = (this.idx + 1) % this.items.length;
+    this.show(this.idx, false);
+  };
+  LogosGfx.prototype.update = function (d) { this.set(d, false); return Promise.resolve(); };
+  LogosGfx.prototype.in = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.box'), [{ clipPath: 'inset(-40px -60px -40px 100%)', opacity: .4 }, { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1 }], { duration: 550, easing: EASE_IO });
+    anim(q('.slot'), [{ opacity: 0, transform: 'scale(.85)' }, { opacity: 1, transform: 'none' }], { duration: 450, delay: 300 });
+    return anim(q('.bar'), [{ transform: 'skewX(-14deg) scaleX(0)' }, { transform: 'skewX(-14deg) scaleX(1)' }], { duration: 500, delay: 350 });
+  };
+  LogosGfx.prototype.out = function () {
+    clearInterval(this.timer);
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.slot'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    return anim(this.root, [
+      { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .55 },
+      { clipPath: 'inset(-40px -60px -40px 100%)', opacity: 0, transform: 'translateX(24px)' }
+    ], { duration: 480, easing: 'cubic-bezier(.45,0,.4,1)' });
+  };
+  LogosGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
+
+  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx };
 
   /* =================================================================== */
   /* Слои: очередь анимаций, всегда применяется последнее состояние      */
@@ -434,12 +499,13 @@
     });
   };
 
-  var layers = { center: new Layer(document.getElementById('L-center')), bottom: new Layer(document.getElementById('L-bottom')) };
+  var layers = { center: new Layer(document.getElementById('L-center')), bottom: new Layer(document.getElementById('L-bottom')), corner: new Layer(document.getElementById('L-corner')) };
 
   function applyState(st) {
     if (!st) return;
     layers.center.set(st.center || null);
     layers.bottom.set(st.bottom || null);
+    layers.corner.set(st.corner || null);
   }
 
   if (!qs.has('pvw')) new CG.Bus(applyState, function () {});

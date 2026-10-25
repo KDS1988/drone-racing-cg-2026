@@ -25,7 +25,7 @@ const MIME = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.md': 'text/plain; charset=utf-8'
 };
 
-let state = { rev: 0, center: null, bottom: null };
+let state = { rev: 0, center: null, bottom: null, corner: null };
 try { state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch (e) { /* первый запуск */ }
 const clients = new Set();
 
@@ -39,7 +39,7 @@ function persist() {
   saveTimer = setTimeout(() => fs.writeFile(STATE_FILE, JSON.stringify(state), () => {}), 300);
 }
 
-function readBody(req, limit = 2e6) {
+function readBody(req, limit = 20e6) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
     req.on('data', c => { size += c.length; if (size > limit) { reject(new Error('too large')); req.destroy(); } else chunks.push(c); });
@@ -63,7 +63,7 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/state' && req.method === 'POST') {
     try {
       const st = JSON.parse(await readBody(req));
-      state = Object.assign({ center: null, bottom: null }, st, { rev: (state.rev || 0) + 1, ts: Date.now() });
+      state = Object.assign({ center: null, bottom: null, corner: null }, st, { rev: (state.rev || 0) + 1, ts: Date.now() });
       broadcast(); persist();
       res.writeHead(200, { 'Content-Type': MIME['.json'] });
       return res.end(JSON.stringify({ ok: true, rev: state.rev }));

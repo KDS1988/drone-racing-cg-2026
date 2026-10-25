@@ -125,3 +125,12 @@ code{background:#0c1630;padding:1px 5px;border-radius:4px}
 .top .logout{font-size:12px}
 .tact label.btn{display:inline-flex;flex-direction:row;align-items:center;color:var(--ink);font-size:14px;text-transform:none;letter-spacing:.02em;font-weight:700}
 .tact label.btn[hidden]{display:none}
+
+.lglist{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.lg{background:#0c1630;border:1px solid var(--line);border-radius:8px;padding:8px}
+.lg .lgimg{height:90px;border-radius:6px;display:flex;align-items:center;justify-content:center;padding:8px}
+.lg .lgimg.white{background:#fff}.lg .lgimg.dark{background:#03112f}.lg .lgimg.none{background:repeating-conic-gradient(#1a2440 0 25%,#0c1630 0 50%) 0 0/16px 16px}
+.lg .lgimg img{max-width:100%;max-height:100%}
+.lg .lgname{font-size:12px;color:var(--mute);margin:6px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lg .row{margin:4px 0 0}
+.opts label.btn.file{display:inline-flex;flex-direction:row;align-items:center;color:var(--ink);font-size:14px;text-transform:none;letter-spacing:.02em;font-weight:700}

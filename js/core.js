@@ -13,13 +13,13 @@
   /* Конфигурация по умолчанию                                           */
   /* ------------------------------------------------------------------ */
   var DEFAULT_CONFIG = {
-    sheetId: '1np8-5BWWoadGkBZ2pqfEHBzXOesoQN1hMA-1ylbv8Xo',
+    sheetId: '1XR4bUiHKdA0MMtmi-vHocZyL1uXBP6Ou66xEmqDhw2A',   // «Чемпионат России 2026»
     fbUrl: 'https://kds88-title-default-rtdb.europe-west1.firebasedatabase.app', // облачная синхронизация (Firebase RTDB)
     source: 'google',          // 'google' | 'demo'
     pollActive: 3,             // сек — опрос листа, который в эфире / в редакторе
     pollAll: 30,               // сек — фоновый опрос остальных листов
     eventTitle: 'Первенство России',
-    sheetsVersion: 2,
+    sheetsVersion: 3,
     sheets: null              // заполняется из SHEET_CATALOG
   };
 
@@ -38,7 +38,7 @@
       key: key, name: name, gid: String(gid || ''), mode: team ? 'team' : 'individual',
       cls: m[1] ? (/^\d+$/.test(m[1]) ? 'Класс ' + m[1] : m[1]) : '',
       comp: team ? 'Командный зачёт' : 'Личный зачёт',
-      cat: /ж/i.test(m[3] || '') ? 'Юниорки' : 'Юниоры',
+      cat: /ж/i.test(m[3] || '') ? 'Женщины' : 'Мужчины',
       on: !/^ТС/i.test(name)
     };
   }
@@ -142,6 +142,13 @@
   function groupOf(v) { var m = GROUP_RE.exec(norm(v)); return m ? (m[1] || m[2]) : null; }
   function isLabel(v) { v = norm(v); return !!v && (!!groupOf(v) || !!stageOf(v) || /^(команда|место)$/i.test(v)); }
 
+  /** значения двух пилотов команды: «9 | 10», пропуск — «—» */
+  function joinPilots(arr) {
+    var v = (arr || []).map(function (x) { return isPlaceholder(x) ? '' : x; });
+    if (!v.some(Boolean)) return '';
+    if (v.length < 2 || !v[1] && !v[0]) return v[0] || '';
+    return v.map(function (x) { return x || '—'; }).join(' | ');
+  }
   function stageOf(v) {
     var s = norm(v);
     for (var i = 0; i < STAGE_RE.length; i++) if (STAGE_RE[i][0].test(s)) return STAGE_RE[i][1];
@@ -159,7 +166,7 @@
     for (r = 0; r < Math.min(nRows, 14); r++) {
       for (c = 0; c < Math.min(nCols, 30); c++) {
         var v = G(r, c);
-        if (/^юниор(ы|ки)$/i.test(v) && c === 0) out.category = cap(v.toLowerCase());
+        if (/^(юниор(ы|ки)|мужчины|женщины|юноши|девушки)$/i.test(v) && c === 0) out.category = cap(v.toLowerCase());
         if (/^класс\s/i.test(v) && !out.title) out.title = v;
       }
     }
@@ -168,7 +175,7 @@
     if (tm) out.cls = 'Класс ' + tm[1];
     if (/командн/i.test(out.title)) { team = true; out.mode = 'team'; out.comp = 'Командный зачёт'; }
     else if (/личн/i.test(out.title)) { team = false; out.mode = 'individual'; out.comp = 'Личный зачёт'; }
-    out.short = (tm ? tm[1] : (sheet.cls || '').replace(/^класс\s*/i, '')) + ' ' + (team ? 'КЗ' : 'ЛЗ') + ' ' + (/юниорк/i.test(out.category) ? 'Ж' : 'М');
+    out.short = (tm ? tm[1] : (sheet.cls || '').replace(/^класс\s*/i, '')) + ' ' + (team ? 'КЗ' : 'ЛЗ') + ' ' + (/юниорк|женщин|девушк/i.test(out.category) ? 'Ж' : 'М');
 
     /* ---------- Квалификация (основная таблица слева) ---------- */
     var hr = -1;
@@ -185,6 +192,7 @@
         else if (h === 'регион') qcols.region = c;
         else if (h === 'округ') qcols.okrug = c;
         else if (/^круги/.test(h)) qcols.laps = c;
+        else if (/^время команд/.test(h)) qcols.teamTime = c;
         else if (/^время/.test(h)) qcols.time = c;
         else if (/^место квал/.test(h)) qcols.placeQ = c;
         else if (/^место групп/.test(h)) qcols.placeG = c;
@@ -203,16 +211,19 @@
             time: qcols.time != null ? clean(G(r, qcols.time)) : null,
             placeQ: qcols.placeQ != null ? clean(G(r, qcols.placeQ)) : null,
             placeG: qcols.placeG != null ? clean(G(r, qcols.placeG)) : null,
-            pilotsRaw: []
+            teamTime: qcols.teamTime != null ? clean(G(r, qcols.teamTime)) : null,
+            pilotsRaw: [], times: [qcols.time != null ? clean(G(r, qcols.time)) : '']
           };
           items.push(cur);
           if (!isPlaceholder(fio)) cur.pilotsRaw.push(fio);
         } else if (cur && team && fio && !isPlaceholder(fio)) {
           cur.pilotsRaw.push(fio);
+          cur.times.push(qcols.time != null ? clean(G(r, qcols.time)) : '');
         }
       }
       items = items.filter(function (it) { return it.pilotsRaw.length > 0 && !/^\d{3,}$/.test(it.idx); });
       items.forEach(function (it) {
+        if (team && qcols.time != null) it.time = joinPilots(it.times.slice(0, Math.max(1, it.pilotsRaw.length)));
         it.pilotsRaw.forEach(function (p) { var w = norm(p).split(' '); if (w[0]) out.known[low(w[0])] = 1; });
         if (isPlaceholder(it.rating)) it.rating = '';
         if (isPlaceholder(it.okrug)) it.okrug = '';
@@ -232,7 +243,7 @@
       }
       return { stage: stage || 'Заезд', group: group };
     };
-    var pilotOk = function (p) { return p && !isPlaceholder(p); };
+    var pilotOk = function (p) { return p && !isPlaceholder(p) && /[A-Za-zА-Яа-яЁё]/.test(p); }; // числа-«хвосты» формул — не пилоты
     for (r = 0; r < nRows; r++) {
       for (c = 1; c < nCols; c++) {
         var a = low(G(r, c)), b = low(G(r, c + 1));
@@ -287,26 +298,36 @@
             rowsOut.push({ rowId: 'r' + rr, cells: cells, pilotsRaw: pilotCol && pilotOk(cells[pilotCol.key]) ? [cells[pilotCol.key]] : [] });
           }
         } else {
-          // командный: команда = 1–2 строки; строка с данными (канал, цвет, время…) начинает новую команду,
-          // строка только с фамилией — второй пилот той же команды
-          var curT = null, emp = 0;
-          for (rr = r + 1; rr < nRows && rr < r + 80; rr++) {
+          // командный: команда = ровно 2 строки шаблона (пилот 1 / пилот 2), считаем парами от заголовка.
+          // Общие для команды ячейки (место, канал, цвет, время команды) могут стоять в любой из двух строк;
+          // личные (круги, лучший круг) — у каждого пилота свои.
+          var emp = 0, raws = [];
+          for (rr = r + 1; rr < nRows && rr < r + 120; rr += 2) {
             if (stopAt(rr)) break;
-            if (blockEmpty(rr)) { if (++emp >= 8) break; continue; }
+            var two = stopAt(rr + 1) ? [rr] : [rr, rr + 1];
+            if (two.every(blockEmpty)) { if (++emp >= 4) break; continue; }
             emp = 0;
-            var pv = pilotCol ? G(rr, pilotCol.c) : '';
-            var others = cols.some(function (x) { return x !== pilotCol && G(rr, x.c); });
-            if (others || !curT || curT.pilotsRaw.length >= 2) {
-              curT = { rowId: 'r' + rr, cells: {}, pilotsRaw: [] };
-              rowsOut.push(curT);
-            }
+            var t = { rowId: 'r' + rr, cells: {}, pilotsRaw: [], vals: {} };
+            cols.forEach(function (x) { if (x !== pilotCol) t.vals[x.key] = two.map(function (q) { return clean(G(q, x.c)); }); });
+            two.forEach(function (q) { var pv = pilotCol ? G(q, pilotCol.c) : ''; if (pilotOk(pv)) t.pilotsRaw.push(pv); });
+            raws.push(t);
+            if (stopAt(rr + 1)) break;
+          }
+          // колонка «личная», если хоть у одной команды есть значение во второй строке
+          var personal = {};
+          cols.forEach(function (x) {
+            if (x === pilotCol || x === placeCol || x.role === 'color' || x.role === 'channel') return;
+            personal[x.key] = raws.some(function (t) { var v = t.vals[x.key]; return v && v[1] && !isPlaceholder(v[1]); });
+          });
+          raws.forEach(function (t) {
             cols.forEach(function (x) {
               if (x === pilotCol) return;
-              var vv = clean(G(rr, x.c));
-              if (vv && !curT.cells[x.key]) curT.cells[x.key] = vv;
+              var v = t.vals[x.key];
+              t.cells[x.key] = personal[x.key] ? joinPilots(v) : (v[0] || v[1] || '');
             });
-            if (pilotOk(pv)) curT.pilotsRaw.push(pv);
-          }
+            delete t.vals;
+            rowsOut.push(t);
+          });
           rowsOut.forEach(function (t) { if (pilotCol) t.cells[pilotCol.key] = t.pilotsRaw.join(' | '); });
         }
         var id = stage + (group ? '|' + group : '') + '|c' + c;
@@ -425,8 +446,17 @@
         try {
           var msg = JSON.parse(e.data);
           if (!msg) return;
-          if (msg.path === '/') self._deliver(msg.data || { center: null, bottom: null });
-          else self._refetch();
+          // кэш состояния: PUT заменяет, PATCH дополняет (пульт шлёт только изменённые слои — логотипы не гоняются каждый раз)
+          var c = self._cache || {};
+          if (msg.path === '/') {
+            if (e.type === 'put') c = msg.data || {};
+            else Object.keys(msg.data || {}).forEach(function (k) { if (msg.data[k] == null) delete c[k]; else c[k] = msg.data[k]; });
+          } else if (/^\/[^\/]+$/.test(msg.path)) {
+            var k1 = msg.path.slice(1);
+            if (msg.data == null) delete c[k1]; else c[k1] = msg.data;
+          } else { self._refetch(); return; }
+          self._cache = c;
+          self._deliver(c);
         } catch (er) {}
       };
       es.addEventListener('put', onData);
@@ -444,7 +474,7 @@
   Bus.prototype._refetch = function () {
     var self = this;
     fetch(this.fbRef, { cache: 'no-store' }).then(function (r) { return r.json(); })
-      .then(function (st) { self._deliver(st || { center: null, bottom: null }); }).catch(function () {});
+      .then(function (st) { self._cache = st || {}; self._deliver(self._cache); }).catch(function () {});
   };
   Bus.prototype._bc = function () {
     var self = this;
@@ -465,10 +495,17 @@
   };
   Bus.prototype.send = function (st) {
     if (this.mode === 'firebase') {
-      var self = this;
-      return fetch(this.fbRef, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) })
-        .then(function (r) { if (!r.ok) self.onStatus('firebase', false, 'запись запрещена (HTTP ' + r.status + ')'); return r.ok; })
-        .catch(function () { self.onStatus('firebase', false); return false; });
+      var self = this, last = this._sent || {}, diff = {}, cur = {};
+      Object.keys(st).concat(Object.keys(last)).forEach(function (k) {
+        var j = JSON.stringify(st[k] == null ? null : st[k]);
+        cur[k] = j;
+        if (last[k] !== j) diff[k] = st[k] == null ? null : st[k];
+      });
+      var full = !this._sent;            // первая запись после загрузки — целиком
+      this._sent = cur;
+      return fetch(this.fbRef, { method: full ? 'PUT' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(full ? st : diff) })
+        .then(function (r) { if (!r.ok) { self._sent = null; self.onStatus('firebase', false, 'запись запрещена (HTTP ' + r.status + ')'); } return r.ok; })
+        .catch(function () { self._sent = null; self.onStatus('firebase', false); return false; });
     }
     if (this.mode === 'server') {
       return fetch('api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) })
