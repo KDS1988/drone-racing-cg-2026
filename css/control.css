@@ -145,3 +145,10 @@ code{background:#0c1630;padding:1px 5px;border-radius:4px}
 .seg .btn:first-child{border-radius:6px 0 0 6px}.seg .btn:last-child{border-radius:0 6px 6px 0}
 .btn.on{background:var(--blue2);border-color:var(--blue);color:#fff}
 .posopts input[type=range]{width:120px;padding:0}
+
+/* --- вкладки проектов (один сайт — два пакета) --- */
+.ptabs{display:flex;gap:4px;flex:none}
+.ptabs a{padding:7px 12px;border:1px solid var(--line);color:var(--mute);text-decoration:none;font-weight:700;font-size:13px;white-space:nowrap}
+.ptabs a:hover{color:var(--ink);border-color:var(--blue)}
+.ptabs a.on{background:var(--blue2);border-color:var(--blue);color:#fff}
+.top .pills{flex-wrap:nowrap;overflow:hidden}

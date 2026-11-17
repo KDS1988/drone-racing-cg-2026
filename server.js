@@ -17,26 +17,30 @@ const os = require('os');
 
 const PORT = +process.env.PORT || 8787;
 const ROOT = __dirname;
-const STATE_FILE = path.join(ROOT, '.state.json');
+// у каждого проекта (вкладки) своё состояние: /api/… — «Гонки дронов», /pilots/api/… — «Пилоты Будущего»
+const CHANNELS = ['', 'pilots'];
+function stateFile(ch) { return path.join(ROOT, ch ? '.state-' + ch + '.json' : '.state.json'); }
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.png': 'image/png',
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.md': 'text/plain; charset=utf-8'
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon', '.md': 'text/plain; charset=utf-8'
 };
 
-let state = { rev: 0, center: null, bottom: null, corner: null };
-try { state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch (e) { /* первый запуск */ }
-const clients = new Set();
+const CH = {};
+CHANNELS.forEach(ch => {
+  const c = CH[ch] = { state: { rev: 0, center: null, bottom: null, corner: null }, clients: new Set(), timer: null };
+  try { c.state = JSON.parse(fs.readFileSync(stateFile(ch), 'utf8')); } catch (e) { /* первый запуск */ }
+});
 
-function broadcast() {
-  const msg = 'data: ' + JSON.stringify(state) + '\n\n';
-  for (const res of clients) { try { res.write(msg); } catch (e) { clients.delete(res); } }
+function broadcast(c) {
+  const msg = 'data: ' + JSON.stringify(c.state) + '\n\n';
+  for (const res of c.clients) { try { res.write(msg); } catch (e) { c.clients.delete(res); } }
 }
-let saveTimer = null;
-function persist() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => fs.writeFile(STATE_FILE, JSON.stringify(state), () => {}), 300);
+function persist(ch) {
+  const c = CH[ch];
+  clearTimeout(c.timer);
+  c.timer = setTimeout(() => fs.writeFile(stateFile(ch), JSON.stringify(c.state), () => {}), 300);
 }
 
 function readBody(req, limit = 20e6) {
@@ -50,7 +54,12 @@ function readBody(req, limit = 20e6) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
-  const p = decodeURIComponent(url.pathname);
+  const p0 = decodeURIComponent(url.pathname);
+  // /pilots/api/state → канал 'pilots', путь '/api/state'
+  const m = p0.match(/^\/([\w-]+)(\/api\/.*)$/);
+  const ch = m && CH[m[1]] ? m[1] : '';
+  const p = m && CH[m[1]] ? m[2] : p0;
+  const c = CH[ch];
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
@@ -58,24 +67,24 @@ const server = http.createServer(async (req, res) => {
   // ---------- API ----------
   if (p === '/api/state' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify(state));
+    return res.end(JSON.stringify(c.state));
   }
   if (p === '/api/state' && req.method === 'POST') {
     try {
       const st = JSON.parse(await readBody(req));
-      state = Object.assign({ center: null, bottom: null, corner: null }, st, { rev: (state.rev || 0) + 1, ts: Date.now() });
-      broadcast(); persist();
+      c.state = Object.assign({ center: null, bottom: null, corner: null }, st, { rev: (c.state.rev || 0) + 1, ts: Date.now() });
+      broadcast(c); persist(ch);
       res.writeHead(200, { 'Content-Type': MIME['.json'] });
-      return res.end(JSON.stringify({ ok: true, rev: state.rev }));
+      return res.end(JSON.stringify({ ok: true, rev: c.state.rev }));
     } catch (e) { res.writeHead(400); return res.end('bad json'); }
   }
   if (p === '/api/events') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.write('retry: 1000\n');
-    res.write('data: ' + JSON.stringify(state) + '\n\n');
-    clients.add(res);
+    res.write('data: ' + JSON.stringify(c.state) + '\n\n');
+    c.clients.add(res);
     const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 15000);
-    req.on('close', () => { clearInterval(ping); clients.delete(res); });
+    req.on('close', () => { clearInterval(ping); c.clients.delete(res); });
     return;
   }
   if (p === '/api/sheet') {
@@ -104,9 +113,13 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   const ips = Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address);
-  console.log('\n  CG · Гонки дронов 2026 — сервер запущен\n');
-  console.log(`  Графика (vMix → Web Browser):  http://localhost:${PORT}/`);
-  console.log(`  Пульт управления:              http://localhost:${PORT}/control.html`);
-  ips.forEach(ip => console.log(`  В локальной сети:              http://${ip}:${PORT}/control.html`));
+  console.log('\n  CG — сервер запущен\n');
+  console.log('  ГОНКИ ДРОНОВ');
+  console.log(`    Графика (vMix → Web Browser):  http://localhost:${PORT}/`);
+  console.log(`    Пульт управления:              http://localhost:${PORT}/control.html`);
+  console.log('  ПИЛОТЫ БУДУЩЕГО');
+  console.log(`    Графика (vMix → Web Browser):  http://localhost:${PORT}/pilots/`);
+  console.log(`    Пульт управления:              http://localhost:${PORT}/pilots/control.html`);
+  ips.forEach(ip => console.log(`  В локальной сети:  http://${ip}:${PORT}/control.html   ·   http://${ip}:${PORT}/pilots/control.html`));
   console.log('\n  Ctrl+C — остановить\n');
 });

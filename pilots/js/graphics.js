@@ -1,0 +1,645 @@
+/* =====================================================================
+   Графика эфира. Получает состояние от пульта (через сервер/BroadcastChannel)
+   и анимирует титры: стартовый, геотитр, нижняя подпись, таблицы.
+   ===================================================================== */
+(function () {
+  'use strict';
+  var STAGE_W = 1920, STAGE_H = 1080;
+  var stage = document.getElementById('stage');
+  var qs = new URLSearchParams(location.search);
+  if (qs.has('checker')) document.body.classList.add('checker');
+
+  /* ---------- масштаб сцены под окно (для превью; в vMix = 1:1) ---------- */
+  function fitStage() {
+    var s = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
+    var x = (window.innerWidth - STAGE_W * s) / 2, y = (window.innerHeight - STAGE_H * s) / 2;
+    stage.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fitStage); fitStage();
+
+  /* ---------- утилиты ---------- */
+  function h(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  var BAG = null; // сюда собираются анимации появления, чтобы их можно было прервать
+  function anim(el, kf, o) {
+    if (!el) return Promise.resolve();
+    var a = el.animate(kf, Object.assign({ fill: 'both', easing: 'cubic-bezier(.2,.8,.2,1)' }, o));
+    if (BAG) BAG.push(a);
+    return a.finished.catch(function () {});
+  }
+  /** запустить in() с записью анимаций */
+  function runIn(g) { BAG = g._inAnims = []; var p; try { p = g.in(); } finally { BAG = null; } return p; }
+  /** мгновенно довести незавершённое появление до конца (перед уходом) */
+  function finishIn(g) {
+    (g._inAnims || []).forEach(function (a) { try { if (a.playState !== 'finished') a.finish(); } catch (e) {} });
+    g._inAnims = [];
+  }
+  function playOut(g) { finishIn(g); return g.out(); }
+  function cssVar(n, d) { var v = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return v || d; }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  var EASE_IO = 'cubic-bezier(.75,0,.2,1)';
+  function isCaps(w) { return w.length > 1 && w === w.toLocaleUpperCase('ru-RU') && /[А-ЯЁA-Z]/.test(w); }
+  function pilotHTML(t) {
+    t = String(t || '').trim();
+    if (!t) return '';
+    return t.split(/\s*\|\s*/).map(function (p) {
+      return p.split(/\s+/).map(function (w) { return '<span class="' + (isCaps(w) ? 'sur' : 'fn') + '">' + esc(w) + '</span>'; }).join(' ');
+    }).join('<span class="sep">|</span>');
+  }
+  function nameHTML(t) { // для нижней подписи
+    return String(t || '').trim().split(/\s+/).map(function (w) { return isCaps(w) ? '<span class="sur">' + esc(w) + '</span>' : esc(w); }).join(' ');
+  }
+  /* ужимаем текст, если не помещается */
+  function fit(el, minRatio) {
+    if (!el) return;
+    el.style.fontSize = '';
+    var base = parseFloat(getComputedStyle(el).fontSize), fs = base, min = base * (minRatio || 0.6);
+    var guard = 60;
+    while (el.scrollWidth > el.clientWidth + 1 && fs > min && guard--) { fs -= 1; el.style.fontSize = fs + 'px'; }
+  }
+  // заранее грузим все начертания, которые используются в титрах, — иначе первая таблица меряется запасным шрифтом
+  var fontsReady = (document.fonts && document.fonts.load) ? Promise.all(
+    ['500', '600', '700', '800'].map(function (w) { return document.fonts.load(w + ' 20px Montserrat', 'АБВ abc 0123|'); })
+      .concat(['400', '700', '900'].map(function (w) { return document.fonts.load(w + ' 20px Unbounded', 'АБВ abc 012'); }))
+      .concat([document.fonts.load('400 20px "Press Start 2P"', 'АБВ abc 0123 ЁЙЪЫ')])
+  ).then(function () { return document.fonts.ready; }, function () {}) : Promise.resolve();
+
+
+  /* пиксельная россыпь из брендбука: случайные квадраты палитры, густота убывает от края (dir: up/down) */
+  var PIX_COLORS = ['#3F0185', '#3F0185', '#8545FD', '#8545FD', '#260869', '#01D7FB'];
+  function seeded(seed) { var x = seed >>> 0 || 1; return function () { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; }; }
+  function pixelize(el, cols, rows, seed, density, dir) {
+    if (!el) return;
+    var cell = 20, c = document.createElement('canvas'); c.width = cols * cell; c.height = rows * cell;
+    var g = c.getContext('2d'), rnd = seeded(seed * 7919);
+    for (var y = 0; y < rows; y++) {
+      var t = dir === 'up' ? (y / (rows - 1)) : (1 - y / (rows - 1)); // 0 у внешнего края → 1 к центру
+      for (var x = 0; x < cols; x++) {
+        var fall = Math.max(0, 1 - x / cols * .9);
+        var p = density * (0.15 + 0.85 * t) * fall * (dir === 'up' ? 1 : 0.8);
+        if (rnd() < p) { var cc = PIX_COLORS[Math.floor(rnd() * PIX_COLORS.length)]; g.fillStyle = cc; g.fillRect(x * cell, y * cell, cell, cell); }
+      }
+    }
+    el.style.backgroundImage = 'url(' + c.toDataURL('image/png') + ')';
+  }
+
+  var GEO_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 22s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12z" fill="#260869"/><circle cx="12" cy="10" r="2.8" fill="#01D7FB"/></svg>';
+
+  /* =================================================================== */
+  /* Стартовый титр                                                      */
+  /* =================================================================== */
+  function StartGfx(parent, item) {
+    this.root = h('div', 'start');
+    this.root.innerHTML =
+      '<div class="frame"><div class="kv"><div class="art"></div><img class="brand" src="assets/logo.png?v=pf1" alt=""><div class="pix b"></div><div class="pix a"></div></div>' +
+      '<div class="plate"><div class="tag"></div><div class="txt"><div class="l1"></div><div class="l2"></div></div></div>' +
+      '<div class="sweep"></div></div><div class="edge"></div>';
+    parent.appendChild(this.root);
+    pixelize(this.root.querySelector('.pix.a'), 28, 7, 11, 0.62, 'up');
+    pixelize(this.root.querySelector('.pix.b'), 22, 5, 5, 0.42, 'down');
+    this.set(item.data);
+  }
+  StartGfx.prototype.set = function (d) {
+    d = d || {};
+    var q = this.root.querySelector.bind(this.root);
+    q('.tag').textContent = d.tag || '';
+    q('.tag').style.display = d.tag ? '' : 'none';
+    q('.l1').textContent = d.line1 || '';
+    q('.l2').textContent = d.line2 || '';
+    this.data = d;
+    var self = this; fontsReady.then(function () { fit(self.root.querySelector('.l1'), 0.55); fit(self.root.querySelector('.l2'), 0.6); });
+  };
+  StartGfx.prototype.update = function (d) { this.set(d); return Promise.resolve(); };
+  StartGfx.prototype.in = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.frame'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 750, easing: EASE_IO });
+    anim(q('.edge'), [{ transform: 'translateX(0) skewX(0deg)', opacity: 1 }, { opacity: 1, offset: .85 }, { transform: 'translateX(1440px) skewX(0deg)', opacity: 0 }], { duration: 750, easing: EASE_IO });
+    anim(q('.kv'), [{ transform: 'scale(1.14)' }, { transform: 'scale(1)' }], { duration: 1600 });
+    anim(q('.plate'), [{ transform: 'translateY(115px)' }, { transform: 'translateY(0)' }], { duration: 500, delay: 450 });
+    anim(q('.tag'), [{ transform: 'translateX(-60px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 400, delay: 700 });
+    anim(q('.l1'), [{ opacity: 0, transform: 'skewX(0deg) translateX(-30px)', textShadow: '-14px 0 0 #01D7FB, 14px 0 0 #8545FD' },
+      { opacity: 1, offset: .35, textShadow: '6px 0 0 #01D7FB, -6px 0 0 #8545FD' },
+      { opacity: .6, offset: .55 },
+      { opacity: 1, transform: 'skewX(0deg) translateX(0)', textShadow: '4px 4px 0 ' + cssVar('--title-shadow', '#01D7FB') }], { duration: 650, delay: 780 });
+    anim(q('.l2'), [{ opacity: 0, letterSpacing: '.8em' }, { opacity: 1, letterSpacing: '.34em' }], { duration: 600, delay: 900 });
+    return anim(q('.sweep'), [{ left: '-300px' }, { left: '1500px' }], { duration: 900, delay: 900, easing: 'ease-in-out' });
+  };
+  StartGfx.prototype.out = function () {
+    var q = this.root.querySelector.bind(this.root);
+    var EOUT = 'cubic-bezier(.55,0,.25,1)';
+    // текст уходит первым
+    anim(q('.l1'), [{ opacity: 1, transform: 'skewX(0deg) translateX(0)' }, { opacity: 0, transform: 'skewX(0deg) translateX(60px)' }], { duration: 220, easing: 'ease-in' });
+    anim(q('.l2'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(60px)' }], { duration: 220, delay: 30, easing: 'ease-in' });
+    anim(q('.tag'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(-40px)' }], { duration: 200, easing: 'ease-in' });
+    // вся заглушка (картинка + плашка) стирается слева направо со светящейся кромкой
+    anim(q('.kv'), [{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }], { duration: 700, delay: 80, easing: 'ease-in' });
+    anim(q('.edge'), [{ transform: 'translateX(0) skewX(0deg)', opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 1, offset: .9 }, { transform: 'translateX(1440px) skewX(0deg)', opacity: 0 }], { duration: 620, delay: 120, easing: EOUT });
+    anim(q('.frame'), [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }], { duration: 620, delay: 120, easing: 'linear' });
+    return anim(q('.frame'), [{ clipPath: 'inset(0 0 0 0%)' }, { clipPath: 'inset(0 0 0 100%)' }], { duration: 620, delay: 120, easing: EOUT });
+  };
+  StartGfx.prototype.destroy = function () { this.root.remove(); };
+
+  /* =================================================================== */
+  /* Геотитр                                                             */
+  /* =================================================================== */
+  function GeoGfx(parent, item) {
+    this.root = h('div', 'geo');
+    this.root.innerHTML = '<div class="ico">' + GEO_SVG + '</div><div class="body"><div class="city"></div><div class="date"></div></div>';
+    parent.appendChild(this.root);
+    this.set(item.data);
+  }
+  GeoGfx.prototype.set = function (d) {
+    d = d || {};
+    this.root.querySelector('.city').textContent = d.city || '';
+    this.root.querySelector('.date').textContent = d.date || '';
+    var self = this; fontsReady.then(function () { fit(self.root.querySelector('.city'), 0.55); fit(self.root.querySelector('.date'), 0.6); });
+  };
+  GeoGfx.prototype.update = function (d) { this.set(d); return Promise.resolve(); };
+  GeoGfx.prototype.in = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.ico'), [{ transform: 'scale(0) rotate(-20deg)', opacity: 0 }, { transform: 'scale(1.12)', opacity: 1, offset: .7 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420 });
+    anim(q('.body'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 520, delay: 160, easing: EASE_IO });
+    anim(q('.city'), [{ transform: 'translateY(26px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420, delay: 330 });
+    return anim(q('.date'), [{ transform: 'translateY(20px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420, delay: 420 });
+  };
+  GeoGfx.prototype.out = function () {
+    // единое движение: текст гаснет, вся плашка схлопывается к иконке и растворяется — без пауз
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.city'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    anim(q('.date'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    return anim(this.root, [
+      { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .55 },
+      { clipPath: 'inset(-40px 100% -40px -60px)', opacity: 0, transform: 'translateX(-24px)' }
+    ], { duration: 480, easing: 'cubic-bezier(.45,0,.4,1)' });
+  };
+  GeoGfx.prototype.destroy = function () { this.root.remove(); };
+
+  /* =================================================================== */
+  /* Нижняя подпись                                                      */
+  /* =================================================================== */
+  function LowerGfx(parent, item) {
+    this.root = h('div', 'lower');
+    this.root.innerHTML = '<div class="brand"><img src="assets/logo.png?v=pf1" alt=""></div><div class="body"><div class="name"></div><div class="role"></div></div><div class="bar"></div>';
+    parent.appendChild(this.root);
+    this.set(item.data);
+  }
+  LowerGfx.prototype.set = function (d) {
+    d = d || {};
+    this.root.querySelector('.name').innerHTML = nameHTML(d.name);
+    this.root.querySelector('.role').textContent = d.role || '';
+    this.root.querySelector('.role').style.display = d.role ? '' : 'none';
+    var self = this; fontsReady.then(function () { fit(self.root.querySelector('.name'), 0.55); fit(self.root.querySelector('.role'), 0.6); });
+  };
+  LowerGfx.prototype.update = function (d) { this.set(d); return Promise.resolve(); };
+  LowerGfx.prototype.in = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.brand'), [{ transform: 'scaleX(0)', opacity: 0 }, { transform: 'scaleX(1)', opacity: 1 }], { duration: 380, easing: EASE_IO });
+    anim(q('.brand img'), [{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, delay: 250 });
+    anim(q('.body'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 600, delay: 150, easing: EASE_IO });
+    anim(q('.bar'), [{ transform: 'skewX(0deg) scaleX(0)', transformOrigin: 'left' }, { transform: 'skewX(0deg) scaleX(1)', transformOrigin: 'left' }], { duration: 500, delay: 450 });
+    anim(q('.name'), [{ transform: 'translateX(-40px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: 360 });
+    return anim(q('.role'), [{ transform: 'translateX(-40px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: 460 });
+  };
+  LowerGfx.prototype.out = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.name'), [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'linear' });
+    anim(q('.role'), [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'linear' });
+    anim(q('.bar'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    return anim(this.root, [
+      { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .55 },
+      { clipPath: 'inset(-40px 100% -40px -60px)', opacity: 0, transform: 'translateX(-30px)' }
+    ], { duration: 560, easing: 'cubic-bezier(.45,0,.4,1)' });
+  };
+  LowerGfx.prototype.destroy = function () { this.root.remove(); };
+
+  /* =================================================================== */
+  /* Таблица                                                             */
+  /* =================================================================== */
+  var ROLE_W = { idx: 78, rating: 128, rank: 92, okrug: 128, region: 250, place: 104, place2: 132, color: 92, channel: 100, time: 160, total: 118, score: 78, laps: 122, num: 122 };
+  var TOP_MIN = 48, HEAD_H = 136, COLS_H = 48, GAP = 5;
+
+  function TableGfx(parent, item) {
+    this.parent = parent;
+    this.root = h('div', 'tbl');
+    this.root.innerHTML =
+      '<div class="head"><img class="logo" src="assets/logo.png?v=pf1" alt="">' +
+      '<div class="tt"><div class="t1"></div><div class="t2"></div></div><div class="pg"></div>' +
+      '<div class="stripes"><div class="speed b"></div><div class="speed r"></div></div></div>' +
+      '<div class="cols"></div><div class="rows"></div>';
+    parent.appendChild(this.root);
+    this.data = null;
+    this.build(item.data);
+  }
+  // ширина колонок по содержимому: меряем реальным рендером (те же шрифты и классы, что в эфире)
+  var measurer = null;
+  function getMeasurer() {
+    if (measurer) return measurer;
+    measurer = h('div', 'tbl measure');
+    measurer.setAttribute('aria-hidden', 'true');
+    measurer.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;width:auto;pointer-events:none';
+    measurer.innerHTML = '<div class="cols" style="display:block;height:auto"></div><div class="row" style="display:block;height:auto"></div>';
+    document.body.appendChild(measurer);
+    return measurer;
+  }
+  var MIN_COL = { idx: 64, rating: 96, rank: 80, okrug: 92, region: 160, place: 96, place2: 110, color: 92, channel: 84, time: 96, total: 96, score: 64, laps: 80, num: 80 };
+  var MAX_W = 1840;
+  TableGfx.prototype.measure = function (d, fs) {
+    var m = getMeasurer(), self = this;
+    m.style.setProperty('--fs', fs + 'px');
+    var rowEl = m.querySelector('.row'), colsEl = m.querySelector('.cols');
+    return d.columns.map(function (c) {
+      // заголовок: переносится по словам — меряем самое длинное слово
+      var hw = 0;
+      String(c.label || '').split(/\s+/).forEach(function (w) {
+        colsEl.innerHTML = '<div style="display:inline-block;padding:0 8px;white-space:nowrap">' + esc(w) + '</div>';
+        hw = Math.max(hw, colsEl.firstChild.offsetWidth);
+      });
+      var vw = 0;
+      if (c.role !== 'color' && c.role !== 'place') {
+        d.rows.forEach(function (r) {
+          var v = r.cells[c.key];
+          if (v == null || v === '') return;
+          rowEl.innerHTML = '<div class="' + self.cellClass(c) + '" style="display:inline-block;overflow:visible">' + self.cellHTML(c, v) + '</div>';
+          vw = Math.max(vw, rowEl.firstChild.offsetWidth);
+        });
+      }
+      return { hw: hw + 4, vw: vw ? vw + 14 : 0 };
+    });
+  };
+  TableGfx.prototype.layout = function (d) {
+    var n = Math.max(1, d.rows.length);
+    var avail = STAGE_H - TOP_MIN * 2 - HEAD_H - COLS_H;
+    var rh = Math.max(28, Math.min(60, Math.floor(avail / n) - GAP));
+    var fs = Math.max(15, Math.min(25, Math.round(rh * 0.47)));
+    var ms = this.measure(d, fs);
+    var pi = -1;
+    var widths = d.columns.map(function (c, i) {
+      if (c.role === 'pilot') { pi = i; return 0; }
+      var min = MIN_COL[c.role] || 80;
+      if (c.role === 'color' || c.role === 'place') return Math.max(ROLE_W[c.role] || min, ms[i].hw);
+      return Math.ceil(Math.max(min, ms[i].hw, ms[i].vw));
+    });
+    var other = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
+    if (pi >= 0) {
+      // пилот: по самому длинному имени, но не шире, чем позволяет экран (длинные имена ужмёт fit)
+      var want = Math.max(d.team ? 420 : 300, ms[pi].hw, ms[pi].vw);
+      widths[pi] = Math.ceil(Math.min(want, d.team ? 700 : 520, Math.max(280, MAX_W - other)));
+    }
+    var W = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
+    // если всё равно не влезает — пропорционально ужимаем остальные колонки
+    if (W > MAX_W) {
+      var k = (MAX_W - 40 - (pi >= 0 ? widths[pi] : 0)) / (W - 40 - (pi >= 0 ? widths[pi] : 0));
+      widths = widths.map(function (w, i) { return i === pi ? w : Math.floor(w * k); });
+      W = widths.reduce(function (a, b) { return a + b; }, 0) + 40;
+    }
+    // узкие таблицы расширяем до минимума, чтобы шапка помещалась
+    var MIN_W = 1100;
+    if (W < MIN_W) { widths[pi >= 0 ? pi : widths.length - 1] += MIN_W - W; W = MIN_W; }
+    var H = HEAD_H + COLS_H + (d.rows.length ? n * (rh + GAP) : 80);
+    var top = Math.max(TOP_MIN, Math.round((STAGE_H - H) / 2));
+    return { widths: widths, W: W, rh: rh, fs: fs, top: top, tpl: widths.map(function (w) { return w + 'px'; }).join(' ') };
+  };
+  // положение таблицы в кадре: слева/центр/справа × верх/середина/низ + масштаб (для больших таблиц)
+  var SAFE_X = 60, SAFE_Y = 40;
+  TableGfx.prototype.applyPos = function (d, animate) {
+    var root = this.root, L = this.L, p = (d && d.pos) || {};
+    var s = Math.max(0.3, Math.min(1, (+p.scale || 100) / 100));
+    var W = L.W * s, H = (root.offsetHeight || (STAGE_H - 2 * L.top)) * s;
+    var left = p.h === 'l' ? SAFE_X : p.h === 'r' ? STAGE_W - SAFE_X - W : (STAGE_W - W) / 2;
+    var top = p.v === 't' ? SAFE_Y : p.v === 'b' ? STAGE_H - SAFE_Y - H : (s === 1 ? L.top : (STAGE_H - H) / 2);
+    var key = [Math.round(left), Math.round(top), s].join(',');
+    if (key === this.posKey) return;
+    this.posKey = key;
+    if (animate) { root.classList.add('moving'); clearTimeout(this.mvT); this.mvT = setTimeout(function () { root.classList.remove('moving'); }, 700); }
+    root.style.marginLeft = '0px';
+    root.style.left = Math.round(left) + 'px';
+    root.style.top = Math.round(top) + 'px';
+    root.style.transformOrigin = '0 0';
+    root.style.transform = s === 1 ? '' : 'scale(' + s + ')';
+  };
+  TableGfx.prototype.applyWidths = function (L) {
+    var root = this.root;
+    root.style.width = L.W + 'px';
+    this.posKey = null; this.applyPos(this.data, true);
+    root.querySelector('.cols').style.gridTemplateColumns = L.tpl;
+    Array.prototype.forEach.call(root.querySelectorAll('.rows .row'), function (r) { r.style.gridTemplateColumns = L.tpl; });
+  };
+  TableGfx.prototype.sig = function (d) {
+    return d.columns.map(function (c) { return c.key + ':' + c.label; }).join(',') + '|' + d.page + '/' + d.pages + '|' + d.team;
+  };
+  TableGfx.prototype.cellHTML = function (col, v) {
+    v = v == null ? '' : String(v);
+    switch (col.role) {
+      case 'pilot': return pilotHTML(v);
+      case 'place': return v ? '<span class="badge">' + esc(v) + '</span>' : '';
+      case 'color': {
+        if (!v) return '';
+        var cc = (window.CG && CG.colorOf(v)) || '#888';
+        return '<span class="chip" title="' + esc(v) + '" style="--cc:' + cc + '"><i></i></span>';
+      }
+      default: return esc(v);
+    }
+  };
+  TableGfx.prototype.cellClass = function (col) {
+    var cls = (col.role === 'pilot' || col.role === 'region') ? 'l' : 'c';
+    if (col.role === 'pilot') cls += ' pilot';
+    if (col.role === 'time') cls += ' time';
+    if (col.role === 'total') cls += ' total';
+    if (col.role === 'rating' || col.role === 'idx' || col.role === 'okrug' || col.role === 'rank' || col.role === 'channel') cls += ' muted';
+    return cls;
+  };
+  TableGfx.prototype.makeRow = function (d, r) {
+    var self = this, row = h('div', 'row' + (r.hl ? ' hl' + r.hl : ''));
+    row.dataset.id = r.id;
+    row.style.gridTemplateColumns = this.L.tpl;
+    d.columns.forEach(function (c) {
+      var cell = h('div', self.cellClass(c), self.cellHTML(c, r.cells[c.key]));
+      cell.dataset.k = c.key; cell.dataset.v = r.cells[c.key] == null ? '' : r.cells[c.key];
+      row.appendChild(cell);
+    });
+    row.appendChild(h('div', 'glint'));
+    return row;
+  };
+  TableGfx.prototype.fitRow = function (row) {
+    var pc = row.querySelectorAll('.pilot');
+    for (var i = 0; i < pc.length; i++) fit(pc[i], 0.62);
+  };
+  TableGfx.prototype.build = function (d) {
+    this.data = d;
+    this.L = this.layout(d);
+    var L = this.L, root = this.root, self = this;
+    root.style.width = L.W + 'px';
+    root.style.setProperty('--rh', L.rh + 'px');
+    root.style.setProperty('--fs', L.fs + 'px');
+    root.style.setProperty('--gap', GAP + 'px');
+    this.setHead(d);
+    var cols = root.querySelector('.cols');
+    cols.style.gridTemplateColumns = L.tpl;
+    cols.innerHTML = d.columns.map(function (c) { return '<div class="' + ((c.role === 'pilot' || c.role === 'region') ? 'l' : 'c') + '">' + esc(c.label) + '</div>'; }).join('');
+    var rows = root.querySelector('.rows');
+    rows.innerHTML = '';
+    if (!d.rows.length) rows.appendChild(h('div', 'empty', esc(d.emptyText || 'ДАННЫЕ ОЖИДАЮТСЯ')));
+    d.rows.forEach(function (r) { rows.appendChild(self.makeRow(d, r)); });
+    this.posKey = null; this.applyPos(d, false);
+    fontsReady.then(function () {
+      if (self.data !== d) return;
+      var L2 = self.layout(d);
+      if (L2.tpl !== self.L.tpl) { self.L = L2; self.applyWidths(L2); }
+      var rs = rows.querySelectorAll('.row'); for (var i = 0; i < rs.length; i++) self.fitRow(rs[i]);
+      fit(root.querySelector('.t1'), 0.55); fit(root.querySelector('.t2'), 0.6);
+    });
+  };
+  TableGfx.prototype.setHead = function (d) {
+    var q = this.root.querySelector.bind(this.root);
+    q('.t1').textContent = d.title || '';
+    q('.t2').textContent = d.subtitle || '';
+    q('.pg').textContent = d.pages > 1 ? (d.page + 1) + ' / ' + d.pages : '';
+    q('.pg').style.display = d.pages > 1 ? '' : 'none';
+  };
+  TableGfx.prototype.rowsIn = function (delay) {
+    var rs = this.root.querySelectorAll('.rows > *'), last = Promise.resolve(), W = this.L.W;
+    for (var i = 0; i < rs.length; i++) {
+      var dl = (delay || 0) + i * 45;
+      last = anim(rs[i], [{ opacity: 0, transform: 'translateX(-90px)' }, { opacity: 1, transform: 'none' }], { duration: 480, delay: dl });
+      var g = rs[i].querySelector('.glint');
+      if (g) anim(g, [{ left: '-220px', opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .85 }, { left: (W - 200) + 'px', opacity: 0 }], { duration: 700, delay: dl + 160, easing: 'ease-in-out' });
+    }
+    return last;
+  };
+  TableGfx.prototype.rowsOut = function () {
+    var rs = this.root.querySelectorAll('.rows > *'), last = Promise.resolve();
+    for (var i = 0; i < rs.length; i++) {
+      last = anim(rs[i], [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(90px)' }], { duration: 260, delay: i * 22, easing: 'ease-in' });
+    }
+    return last;
+  };
+  TableGfx.prototype.in = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.head'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 600, easing: EASE_IO });
+    anim(q('.head .logo'), [{ opacity: 0, transform: 'scale(.6) rotate(-6deg)' }, { opacity: 1, transform: 'none' }], { duration: 520, delay: 120 });
+    anim(q('.head .stripes'), [{ transform: 'translateX(-260px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 650, delay: 200 });
+    anim(q('.t1'), [{ opacity: 0, textShadow: '-16px 0 0 #01D7FB, 16px 0 0 #8545FD' }, { opacity: 1, offset: .4, textShadow: '6px 0 0 #01D7FB, -6px 0 0 #8545FD' }, { opacity: 1, textShadow: '4px 4px 0 ' + cssVar('--title-shadow', '#01D7FB') }], { duration: 600, delay: 250 });
+    anim(q('.cols'), [{ opacity: 0, transform: 'translateY(-12px)' }, { opacity: 1, transform: 'none' }], { duration: 350, delay: 300 });
+    return this.rowsIn(380);
+  };
+  TableGfx.prototype.out = function () {
+    var q = this.root.querySelector.bind(this.root);
+    // строки быстро уходят вправо, затем шапка и колонки одним плавным движением стираются и гаснут
+    var n = this.root.querySelectorAll('.rows > *').length;
+    this.rowsOut();
+    var d = Math.min(120 + n * 22, 380);
+    anim(q('.cols'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(40px)' }], { duration: 300, delay: Math.max(0, d - 120), easing: 'ease-in' });
+    anim(q('.head .t1'), [{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: d, easing: 'linear' });
+    anim(q('.head .t2'), [{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: d, easing: 'linear' });
+    return anim(q('.head'), [
+      { clipPath: 'inset(-30px -40px -30px -40px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .5 },
+      { clipPath: 'inset(-30px -40px -30px 100%)', opacity: 0, transform: 'translateX(30px)' }
+    ], { duration: 520, delay: d, easing: 'cubic-bezier(.45,0,.4,1)' });
+  };
+  TableGfx.prototype.update = function (d) {
+    var self = this, old = this.data, nl = this.layout(d);
+    if (this.sig(old) !== this.sig(d) || nl.rh !== this.L.rh) {
+      // смена страницы/структуры: строки уходят, перестраиваем, строки приходят
+      return this.rowsOut().then(function () {
+        self.build(d);
+        return self.rowsIn(0);
+      });
+    }
+    this.setHead(d);
+    var widthsChanged = nl.tpl !== this.L.tpl;
+    this.data = d;
+    if (!widthsChanged) this.applyPos(d, true);
+    if (widthsChanged) { this.root.classList.add('resizing'); this.L = nl; this.applyWidths(nl); setTimeout(function () { self.root.classList.remove('resizing'); }, 700); }
+    var rowsEl = this.root.querySelector('.rows');
+    var emptyEl = rowsEl.querySelector('.empty'); if (emptyEl && d.rows.length) emptyEl.remove();
+    var map = {}; Array.prototype.forEach.call(rowsEl.querySelectorAll('.row'), function (r) { map[r.dataset.id] = r; });
+    // FLIP: запоминаем позиции
+    var first = {}; Object.keys(map).forEach(function (k) { first[k] = map[k].getBoundingClientRect().top; });
+    var keep = {}, added = [];
+    d.rows.forEach(function (r) {
+      var el = map[r.id];
+      if (!el) { el = self.makeRow(d, r); added.push(el); }
+      else {
+        el.className = 'row' + (r.hl ? ' hl' + r.hl : '');
+        d.columns.forEach(function (c) {
+          var cell = el.querySelector('[data-k="' + c.key + '"]');
+          var v = r.cells[c.key] == null ? '' : String(r.cells[c.key]);
+          if (cell && cell.dataset.v !== v) {
+            cell.dataset.v = v; cell.innerHTML = self.cellHTML(c, v);
+            cell.classList.remove('flash'); void cell.offsetWidth; cell.classList.add('flash');
+            if (c.role === 'pilot') fit(cell, 0.62);
+          }
+        });
+      }
+      keep[r.id] = 1;
+      rowsEl.appendChild(el); // порядок
+    });
+    Object.keys(map).forEach(function (k) {
+      if (!keep[k]) { var el = map[k]; anim(el, [{ opacity: 1 }, { opacity: 0, transform: 'translateX(90px)' }], { duration: 260 }).then(function () { el.remove(); }); }
+    });
+    // FLIP: анимируем перестановку
+    Object.keys(map).forEach(function (k) {
+      if (!keep[k]) return;
+      var dy = first[k] - map[k].getBoundingClientRect().top;
+      if (Math.abs(dy) > 1) anim(map[k], [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }], { duration: 600, easing: EASE_IO });
+    });
+    if (widthsChanged) setTimeout(function () { Array.prototype.forEach.call(rowsEl.querySelectorAll('.row'), function (r) { self.fitRow(r); }); }, 650);
+    added.forEach(function (el, i) { self.fitRow(el); anim(el, [{ opacity: 0, transform: 'translateX(-90px)' }, { opacity: 1, transform: 'none' }], { duration: 450, delay: i * 40 }); });
+    this.data = d;
+    return Promise.resolve();
+  };
+  TableGfx.prototype.destroy = function () { this.root.remove(); };
+
+  /* =================================================================== */
+  /* Карусель логотипов — правый нижний угол                             */
+  /* =================================================================== */
+  function LogosGfx(parent, item) {
+    this.root = h('div', 'logos');
+    this.root.innerHTML = '<div class="box"><div class="slot"></div></div><div class="bar"></div>';
+    parent.appendChild(this.root);
+    this.idx = 0; this.timer = null; this.items = [];
+    this.set(item.data, true);
+  }
+  LogosGfx.prototype.set = function (d, first) {
+    d = d || {};
+    var items = (d.items || []).filter(Boolean);
+    this.root.className = 'logos plate-' + (d.plate || 'white');
+    var sameList = JSON.stringify(items) === JSON.stringify(this.items);
+    this.items = items; this.interval = Math.max(2, +d.interval || 5);
+    var srcs = items.map(function (x) { return x && x.src || x; });
+    var sameSrc = JSON.stringify(srcs) === JSON.stringify(this.srcs || []);
+    this.srcs = srcs;
+    if (sameSrc && !first) {      // поменялся только размер — применяем к текущему без смены
+      var cur = this.root.querySelector('img.cur'), ci = items[this.idx];
+      if (cur && ci) cur.style.setProperty('--s', ci.scale || 1);
+    }
+    if ((!sameList && !sameSrc) || first) {
+      if (this.idx >= items.length) this.idx = 0;
+      this.show(this.idx, true);
+    }
+    this.restart();
+  };
+  LogosGfx.prototype.restart = function () {
+    var self = this;
+    clearInterval(this.timer); this.timer = null;
+    if (this.items.length > 1) this.timer = setInterval(function () { self.next(); }, this.interval * 1000);
+  };
+  LogosGfx.prototype.show = function (i, instant) {
+    var slot = this.root.querySelector('.slot');
+    var it = this.items[i];
+    var src = it && typeof it === 'object' ? it.src : it;
+    var old = slot.querySelector('img.cur');
+    if (!src) { slot.innerHTML = ''; return; }
+    var img = h('img', 'cur'); img.src = src; img.alt = '';
+    img.style.setProperty('--s', (it && it.scale) || 1);
+    slot.appendChild(img);
+    if (instant || !old) { if (old) old.remove(); return; }
+    old.classList.remove('cur');
+    anim(old, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '-40px 0' }], { duration: 450, easing: 'ease-in' }).then(function () { old.remove(); });
+    anim(img, [{ opacity: 0, translate: '40px 0' }, { opacity: 1, translate: '0 0' }], { duration: 550, delay: 120 });
+    var bar = this.root.querySelector('.bar');
+    anim(bar, [{ transform: 'skewX(0deg) scaleX(0)' }, { transform: 'skewX(0deg) scaleX(1)' }], { duration: 500, delay: 100 });
+  };
+  LogosGfx.prototype.next = function () {
+    if (this.items.length < 2) return;
+    this.idx = (this.idx + 1) % this.items.length;
+    this.show(this.idx, false);
+  };
+  LogosGfx.prototype.update = function (d) { this.set(d, false); return Promise.resolve(); };
+  LogosGfx.prototype.in = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.box'), [{ clipPath: 'inset(-40px 100% -40px -60px)', opacity: .4 }, { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1 }], { duration: 550, easing: EASE_IO });
+    anim(q('.slot'), [{ opacity: 0, transform: 'scale(.85)' }, { opacity: 1, transform: 'none' }], { duration: 450, delay: 300 });
+    return anim(q('.bar'), [{ transform: 'skewX(0deg) scaleX(0)' }, { transform: 'skewX(0deg) scaleX(1)' }], { duration: 500, delay: 350 });
+  };
+  LogosGfx.prototype.out = function () {
+    clearInterval(this.timer);
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.slot'), [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'linear' });
+    return anim(this.root, [
+      { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .55 },
+      { clipPath: 'inset(-40px 100% -40px -60px)', opacity: 0, transform: 'translateX(-24px)' }
+    ], { duration: 480, easing: 'cubic-bezier(.45,0,.4,1)' });
+  };
+  LogosGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
+
+  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx };
+
+  /* =================================================================== */
+  /* Слои: очередь анимаций, всегда применяется последнее состояние      */
+  /* =================================================================== */
+  function Layer(el) { this.el = el; this.cur = null; this.busy = false; this.pending = undefined; }
+  Layer.prototype.set = function (item) {
+    this.pending = item || null;
+    if (!this.busy) this._run();
+  };
+  Layer.prototype._run = function () {
+    var self = this;
+    if (this.pending === undefined) { this.busy = false; return; }
+    var item = this.pending; this.pending = undefined; this.busy = true;
+    this._apply(item).catch(function (e) { console.error(e); }).then(function () { self._run(); });
+  };
+  function sanitize(item) {
+    if (!item) return item;
+    item.data = item.data || {};
+    if (item.type === 'table') {
+      var d = item.data;
+      d.columns = d.columns || []; d.rows = d.rows || [];
+      d.rows.forEach(function (r) { r.cells = r.cells || {}; r.hl = r.hl || 0; });
+      d.page = d.page || 0; d.pages = d.pages || 1;
+    }
+    return item;
+  }
+  Layer.prototype._apply = function (item) {
+    item = sanitize(item);
+    var self = this, cur = this.cur;
+    if (!item) {
+      if (!cur) return Promise.resolve();
+      this.cur = null;
+      return playOut(cur).then(function () { cur.destroy(); });
+    }
+    var same = cur && cur.key === item.key && cur.type === item.type && cur.take === item.take;
+    if (same) {
+      if (JSON.stringify(cur.lastData) === JSON.stringify(item.data)) return Promise.resolve();
+      cur.lastData = item.data;
+      return cur.update(item.data);
+    }
+    var pre = cur ? playOut(cur).then(function () { cur.destroy(); }) : Promise.resolve();
+    return pre.then(function () {
+      var T = TYPES[item.type];
+      if (!T) { self.cur = null; return; }
+      var g = new T(self.el, item);
+      g.key = item.key; g.type = item.type; g.take = item.take; g.lastData = item.data;
+      self.cur = g;
+      // появление не блокирует очередь: OUT можно нажать сразу, не дожидаясь конца анимации
+      return fontsReady.then(function () { runIn(g); });
+    });
+  };
+
+  var layers = { center: new Layer(document.getElementById('L-center')), bottom: new Layer(document.getElementById('L-bottom')), corner: new Layer(document.getElementById('L-corner')) };
+
+  // пульт обновлён, а графика в vMix открыта со старой версией — перезагружаемся один раз (минуя кэш GitHub Pages)
+  function checkVersion(st) {
+    if (qs.has('pvw') || !st || !st.ver || !CG.VERSION || String(st.ver) <= CG.VERSION) return false;
+    var k = 'cg-reload-' + st.ver;
+    try { if (sessionStorage.getItem(k)) return false; sessionStorage.setItem(k, '1'); } catch (e) { return false; }
+    var u = new URL(location.href); u.searchParams.set('_v', st.ver);
+    location.replace(u.toString());
+    return true;
+  }
+  function applyState(st) {
+    if (!st) return;
+    if (checkVersion(st)) return;
+    layers.center.set(st.center || null);
+    layers.bottom.set(st.bottom || null);
+    layers.corner.set(st.corner || null);
+    document.getElementById('stage').classList.toggle('corner-on', !!st.corner);
+  }
+
+  if (!qs.has('pvw')) new CG.Bus(applyState, function () {});
+  window.__cgApply = applyState; // для отладки
+})();
