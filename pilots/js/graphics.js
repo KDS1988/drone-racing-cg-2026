@@ -567,7 +567,83 @@
   };
   LogosGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
 
-  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx };
+  /* =================================================================== */
+  /* Карточка пилота (протоколы): общий зачёт или результат в дисциплине */
+  /* =================================================================== */
+  function PCardGfx(parent, item) {
+    this.root = h('div', 'pcard');
+    this.root.innerHTML =
+      '<div class="brand"><img src="assets/logo.png?v=pf1" alt=""></div>' +
+      '<div class="body"><div class="top"><div class="who"><div class="name"></div><div class="region"></div></div><div class="tag"></div></div>' +
+      '<div class="cells"></div></div>' +
+      '<div class="place"><span class="l"></span><b></b></div><div class="total"><span class="l"></span><b></b></div><div class="bar"></div>';
+    parent.appendChild(this.root);
+    this.sig = '';
+    this.set(item.data, true);
+  }
+  PCardGfx.prototype.cellHTML = function (c) {
+    var v = c.pips != null
+      ? '<span class="pips">' + Array.apply(null, Array(Math.max(1, Math.min(12, c.max || 7)))).map(function (_, i) { return '<i' + (i < c.pips ? ' class="on"' : '') + '></i>'; }).join('') + '</span>'
+      : esc(c.value == null ? '' : c.value);
+    return '<span class="l">' + esc(c.label || '') + '</span><b>' + v + '</b>' + (c.sub ? '<span class="s">' + esc(c.sub) + '</span>' : '');
+  };
+  PCardGfx.prototype.set = function (d, first) {
+    d = d || {};
+    var q = this.root.querySelector.bind(this.root), self = this;
+    q('.name').innerHTML = nameHTML(d.name);
+    q('.region').textContent = d.region || '';
+    q('.tag').textContent = d.tag || ''; q('.tag').style.display = d.tag ? '' : 'none';
+    var setBox = function (sel, label, val) {
+      var el = q(sel), b = el.querySelector('b'), nv = val == null ? '' : String(val);
+      el.querySelector('.l').textContent = label || '';
+      el.style.display = nv ? '' : 'none';
+      if (b.textContent !== nv) { b.textContent = nv; if (!first) anim(b, [{ transform: 'scale(1.35)', color: '#fff' }, { transform: 'none' }], { duration: 500 }); }
+    };
+    setBox('.place', d.placeLabel || 'Место', d.place);
+    setBox('.total', d.totalLabel || 'Баллы', d.total);
+    var cells = d.cells || [], wrap = q('.cells');
+    var sig = cells.map(function (c) { return c.label + (c.pips != null ? '#' : ''); }).join('|');
+    if (sig !== this.sig) {
+      this.sig = sig;
+      wrap.innerHTML = cells.map(function (c) { return '<div class="cell st-' + (c.st || 'ok') + '">' + self.cellHTML(c) + '</div>'; }).join('');
+      wrap.style.display = cells.length ? '' : 'none';
+    } else {
+      Array.prototype.forEach.call(wrap.children, function (el, i) {
+        var c = cells[i], html = self.cellHTML(c);
+        el.className = 'cell st-' + (c.st || 'ok');
+        if (el.innerHTML !== html) { el.innerHTML = html; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+      });
+    }
+    this.root.classList.toggle('nocells', !cells.length);
+    fontsReady.then(function () { fit(q('.name'), 0.55); fit(q('.region'), 0.6); });
+  };
+  PCardGfx.prototype.update = function (d) { this.set(d, false); return Promise.resolve(); };
+  PCardGfx.prototype.in = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.brand'), [{ transform: 'scaleX(0)', opacity: 0 }, { transform: 'scaleX(1)', opacity: 1 }], { duration: 380, easing: EASE_IO });
+    anim(q('.brand img'), [{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, delay: 250 });
+    anim(q('.body'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 600, delay: 150, easing: EASE_IO });
+    anim(q('.who'), [{ transform: 'translateX(-40px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: 360 });
+    anim(q('.tag'), [{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 600 });
+    var cs = this.root.querySelectorAll('.cell');
+    for (var i = 0; i < cs.length; i++) anim(cs[i], [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: 480 + i * 60 });
+    anim(q('.place'), [{ transform: 'scaleY(0)', opacity: 0 }, { transform: 'scaleY(1)', opacity: 1 }], { duration: 400, delay: 560, easing: EASE_IO });
+    anim(q('.bar'), [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 500, delay: 500 });
+    return anim(q('.total'), [{ transform: 'scaleY(0)', opacity: 0 }, { transform: 'scaleY(1)', opacity: 1 }], { duration: 400, delay: 660, easing: EASE_IO });
+  };
+  PCardGfx.prototype.out = function () {
+    var q = this.root.querySelector.bind(this.root);
+    anim(q('.who'), [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'linear' });
+    anim(q('.cells'), [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'linear' });
+    return anim(this.root, [
+      { clipPath: 'inset(-40px -60px -40px -60px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .55 },
+      { clipPath: 'inset(-40px 100% -40px -60px)', opacity: 0, transform: 'translateX(-30px)' }
+    ], { duration: 560, easing: 'cubic-bezier(.45,0,.4,1)' });
+  };
+  PCardGfx.prototype.destroy = function () { this.root.remove(); };
+
+  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx, pcard: PCardGfx };
 
   /* =================================================================== */
   /* Слои: очередь анимаций, всегда применяется последнее состояние      */

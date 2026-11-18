@@ -183,3 +183,45 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .tbl.resizing{transition:width .6s cubic-bezier(.65,0,.35,1),margin-left .6s cubic-bezier(.65,0,.35,1)}
 .tbl.resizing .cols,.tbl.resizing .row{transition:grid-template-columns .6s cubic-bezier(.65,0,.35,1)}
 .tbl.moving{transition:left .6s cubic-bezier(.65,0,.35,1),top .6s cubic-bezier(.65,0,.35,1),transform .6s cubic-bezier(.65,0,.35,1)}
+
+/* ------------------------------------------------------------------ */
+/* Карточка пилота 1400×170 (протоколы): имя, регион, ячейки, место, баллы */
+/* ------------------------------------------------------------------ */
+.pcard{position:absolute;left:260px;top:840px;width:1400px;height:170px;transition:left .55s cubic-bezier(.65,0,.35,1)}
+#stage.corner-on .pcard{left:300px}
+.pcard .brand{position:absolute;left:0;top:0;width:170px;height:170px;z-index:2;display:flex;align-items:center;justify-content:center;transform-origin:left}
+.pcard .brand::before{content:'';position:absolute;inset:0;background:var(--p700);clip-path:polygon(0 var(--n),var(--n) var(--n),var(--n) 0,100% 0,100% 100%,var(--n) 100%,var(--n) calc(100% - var(--n)),0 calc(100% - var(--n)))}
+.pcard .brand img{position:relative;width:130px;height:auto}
+.pcard .body{position:absolute;left:170px;top:0;width:870px;height:170px;background:var(--plate)}
+.pcard .top{position:absolute;left:0;right:0;top:0;height:92px;display:flex;align-items:center;gap:16px;padding:0 24px 0 34px}
+.pcard .who{flex:1;min-width:0}
+.pcard .name{font-family:var(--font-head);font-size:28px;line-height:1.25;white-space:nowrap;overflow:hidden;text-shadow:3px 3px 0 var(--p500);padding-bottom:3px}
+.pcard .name .sur{font-weight:400}
+.pcard .region{font-weight:700;font-size:20px;color:var(--subtitle-color);margin-top:8px;white-space:nowrap;overflow:hidden}
+.pcard .tag{flex:none;align-self:flex-start;margin-top:14px;font-family:var(--font-head);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--p900);background:var(--cyan);padding:7px 10px 6px;white-space:nowrap}
+.pcard .cells{position:absolute;left:0;right:0;bottom:0;height:78px;display:flex;background:var(--p700);border-top:4px solid var(--p500)}
+.pcard.nocells .top{height:170px}
+.pcard .cell{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;position:relative}
+.pcard .cell + .cell::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:2px;background:rgba(133,69,253,.7)}
+.pcard .cell .l{font-weight:700;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.7);white-space:nowrap}
+.pcard .cell b{font-weight:800;font-size:26px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pcard .cell .s{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--cyan);line-height:1}
+.pcard .cell:has(.s){gap:3px}
+.pcard .cell:has(.s) b{font-size:23px}
+.pcard .cell.st-best b{color:var(--cyan)}
+.pcard .cell.st-dnf b{color:#fff;background:var(--red);padding:2px 8px}
+.pcard .cell.st-pending{opacity:.45}
+.pcard .cell.st-live .l::after{content:'';display:inline-block;width:8px;height:8px;margin-left:8px;background:var(--red);animation:pcblink 1s steps(2) infinite}
+@keyframes pcblink{50%{opacity:0}}
+.pcard .cell.flash{animation:pcflash 1s ease-out}
+@keyframes pcflash{0%{background:rgba(1,215,251,.55)}100%{background:rgba(1,215,251,0)}}
+.pcard .pips{display:inline-flex;gap:5px}
+.pcard .pips i{width:16px;height:16px;border:3px solid var(--p500)}
+.pcard .pips i.on{background:var(--cyan);border-color:var(--cyan)}
+.pcard .place,.pcard .total{position:absolute;top:0;height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;transform-origin:bottom}
+.pcard .place{left:1040px;width:160px;background:var(--cyan);color:var(--p900)}
+.pcard .total{left:1200px;width:200px;background:var(--p500);color:#fff;clip-path:polygon(0 0,calc(100% - var(--n)) 0,calc(100% - var(--n)) var(--n),100% var(--n),100% calc(100% - var(--n)),calc(100% - var(--n)) calc(100% - var(--n)),calc(100% - var(--n)) 100%,0 100%)}
+.pcard .place .l,.pcard .total .l{font-weight:800;font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+.pcard .place b{font-family:var(--font-head);font-weight:400;font-size:46px;line-height:1}
+.pcard .total b{font-family:var(--font-head);font-weight:400;font-size:28px;line-height:1;text-shadow:3px 3px 0 var(--p900)}
+.pcard .bar{position:absolute;left:170px;top:170px;width:300px;height:6px;background:var(--cyan);transform-origin:left}

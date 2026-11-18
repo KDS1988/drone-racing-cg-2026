@@ -15,9 +15,10 @@
   var DEFAULT_CONFIG = {
     sheetId: '1XR4bUiHKdA0MMtmi-vHocZyL1uXBP6Ou66xEmqDhw2A',   // «Чемпионат России 2026»
     fbUrl: 'https://kds88-title-default-rtdb.europe-west1.firebasedatabase.app', // облачная синхронизация (Firebase RTDB)
-    source: 'demo',            // 'demo' (репетиция) | 'google' | 'file'. Источник данных для «Пилотов Будущего» уточняется — пока демо
-    pollActive: 3,             // сек — опрос листа, который в эфире / в редакторе
-    pollAll: 30,               // сек — фоновый опрос остальных листов
+    source: 'fgdr',            // 'fgdr' — API протоколов | 'demo' — демо-протоколы (репетиция) | 'google' | 'file' — таблицы прошлого пакета
+    fgdrBase: 'https://pro.fgdrrace.online/api/protocols', // протоколы обновляются раз в секунду
+    pollActive: 1,             // сек — опрос протокола/листа, который в эфире / в редакторе
+    pollAll: 15,               // сек — фоновый опрос остальных
     eventTitle: 'Пилоты Будущего',
     sheetsVersion: 3,
     sheets: null              // заполняется из SHEET_CATALOG
@@ -517,7 +518,7 @@
   };
 
   return {
-    VERSION: '20261117a',   // меняется при каждом выпуске (и в ?v= в html) — графика сама перезагрузится, если пульт новее
+    VERSION: '20261118a',   // меняется при каждом выпуске (и в ?v= в html) — графика сама перезагрузится, если пульт новее
     DEFAULT_CONFIG: DEFAULT_CONFIG, SHEET_CATALOG: SHEET_CATALOG, sheetFromName: sheetFromName,
     sheetCsvUrl: sheetCsvUrl,
     parseCSV: parseCSV,

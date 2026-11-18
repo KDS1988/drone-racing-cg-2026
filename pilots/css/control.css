@@ -152,3 +152,4 @@ code{background:#1b0652;padding:1px 5px;border-radius:4px}
 .ptabs a:hover{color:var(--ink);border-color:var(--blue)}
 .ptabs a.on{background:var(--blue2);border-color:var(--blue);color:#fff}
 .top .pills{flex-wrap:nowrap;overflow:hidden}
+#srcSel{max-width:230px}

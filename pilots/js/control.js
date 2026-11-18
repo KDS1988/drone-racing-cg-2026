@@ -26,7 +26,8 @@
     ],
     tables: {},           // itemId → { title, subtitle, rpp, page, sort, hideEmpty, hiddenCols:{}, hiddenRows:{}, ovr:{rowId:{col:val}}, flip }
     selected: 'start',
-    logos: { items: [], interval: 5, plate: 'white' }   // карусель логотипов (правый нижний угол)
+    logos: { items: [], interval: 5, plate: 'white' },  // карусель логотипов (правый нижний угол)
+    fgdr: { pilot: '', region: '', teamN: 3, liveDisc: 'race75' } // протоколы: выбранный пилот, регион, N лучших в командном зачёте
   };
   var store;
   try { store = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { store = {}; }
@@ -44,6 +45,8 @@
     if (!store.config.sheets.some(function (s) { return s.key === d.key; })) store.config.sheets.push(clone(d));
   });
   if (!store.collapsed) store.collapsed = {};
+  store.fgdr = Object.assign({ pilot: '', region: '', teamN: 3, liveDisc: 'race75' }, store.fgdr || {});
+  if (!store.config.fgdrBase) store.config.fgdrBase = CG.DEFAULT_CONFIG.fgdrBase;
   if (!store.logos || !Array.isArray(store.logos.items)) store.logos = { items: [], interval: 5, plate: 'white' };
   var saveTimer = null;
   function save() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }, 250); }
@@ -64,7 +67,9 @@
   /* =================================================================== */
   var DATA = {};  // key → { parsed, at, err, hash, busy, last }
   /** листы, которые показываются в пульте (включены в настройках; в демо — только те, для которых есть демо-файл) */
+  function useFgdr() { return cfg.source === 'fgdr' || cfg.source === 'demo'; }
   function activeSheets() {
+    if (useFgdr()) return [];
     return cfg.sheets.filter(function (s) {
       if (s.on === false || !CG.sheetCsvUrl(cfg, s)) return false;
       if (cfg.source === 'file' && OFFLINE.fileName && offlineCsv(s) == null) return false; // листа нет в файле — не показываем
@@ -152,6 +157,7 @@
     return hot;
   }
   function pollTick() {
+    if (useFgdr()) return fgTick();
     var now = Date.now(), hot = hotSheets();
     activeSheets().forEach(function (s) {
       var d = DATA[s.key];
@@ -159,7 +165,135 @@
       if (!d.busy && now - d.last >= iv) loadSheet(s);
     });
   }
-  function reloadAll() { activeSheets().forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); }); }
+  function reloadAll() { activeSheets().forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); }); if (useFgdr()) CG.FGDR.ENDPOINTS.forEach(function (n) { if (n === 'all' || fgHot()[n]) fgLoad(n, true); }); }
+
+  /* =================================================================== */
+  /* Протоколы FGDR (pro.fgdrrace.online): опрос JSON раз в секунду      */
+  /* =================================================================== */
+  var FG = new CG.FGDR.Store();
+  var FGS = {};   // endpoint → { at, err, busy, last, ver }
+  function fgReset() { FG = new CG.FGDR.Store(); FGS = {}; if (window.__cg) window.__cg.FG = FG; }
+  function fgState(name) { var st = FGS[name || 'all'] || {}; return { at: st.at || 0, err: st.err || null }; }
+  function fgUrl(name) { return cfg.source === 'demo' ? 'demo/fgdr/' + name + '.json' : String(cfg.fgdrBase || CG.DEFAULT_CONFIG.fgdrBase).replace(/\/+$/, '') + '/' + name; }
+  function getJson(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+  function fgLoad(name, force) {
+    var st = FGS[name] = FGS[name] || {};
+    if (st.busy) return;
+    st.busy = true; st.last = Date.now();
+    getJson(fgUrl(name)).catch(function (e) {
+      // нет CORS / сеть — пробуем через server.js (он сам ходит в API)
+      if (cfg.source === 'fgdr' && bus && bus.mode === 'server') return getJson('api/fgdr?d=' + encodeURIComponent(name) + '&base=' + encodeURIComponent(cfg.fgdrBase || ''));
+      throw e;
+    }).then(function (j) {
+      st.err = null; st.at = Date.now();
+      var v = String(j && j.version) + '|' + (j && j.rows ? j.rows.length : 0) + '|' + (j && j.generatedAt && j.version == null ? j.generatedAt : '');
+      if (!force && v === st.ver) return;
+      st.ver = v;
+      FG.put(name, j);
+      fgChanged();
+    }).catch(function (e) {
+      st.err = (e && e.message) || String(e);
+    }).then(function () { st.busy = false; renderFgStatus(); });
+  }
+  /** какие протоколы нужны прямо сейчас (титры в эфире + выбранный в пульте) */
+  function fgHot() {
+    var hot = {};
+    [state.center, state.bottom, state.corner].map(function (L) { return L && itemById(L.key); }).concat([itemById(store.selected)])
+      .forEach(function (it) { if (it && it.kind === 'fgdr') hot[it.need || 'all'] = 1; });
+    return hot;
+  }
+  function fgTick() {
+    var now = Date.now(), hot = fgHot();
+    CG.FGDR.ENDPOINTS.forEach(function (n) {
+      var st = FGS[n] || {};
+      // «all» содержит все дисциплины: если он и так опрашивается часто, отдельные протоколы не нужны
+      var iv = hot[n] && !(n !== 'all' && hot.all) ? cfg.pollActive : (n === 'all' ? cfg.pollAll : 0);
+      if (iv && !st.busy && now - (st.last || 0) >= iv * 1000) fgLoad(n);
+    });
+  }
+  var fgSoon = null;
+  function fgChanged() {
+    clearTimeout(fgSoon);
+    fgSoon = setTimeout(function () {
+      renderList();
+      var it = itemById(store.selected), ed = $('#editor');
+      if (it && it.kind === 'fgdr') {
+        var ae = document.activeElement, typing = ae && ed.contains(ae) && /INPUT|SELECT/.test(ae.tagName);
+        if (it.type === 'table') {
+          var raw = rawTable(it), sig = raw ? raw.rows.map(function (r) { return r.id; }).join(',') : '';
+          if (typing || sig === ed.dataset.sig) refreshEditorValues(it); else renderEditor();
+        } else if (!typing) renderEditor();
+      }
+      refreshOnAir(); updatePreview(false);
+    }, 60);
+  }
+  function renderFgStatus() {
+    var p = $('#pData'), errs = [], newest = 0, ok = 0;
+    Object.keys(FGS).forEach(function (n) { var st = FGS[n]; if (st.err) errs.push(n + ': ' + st.err); if (st.at) { ok++; newest = Math.max(newest, st.at); } });
+    var ver = FG.version();
+    if (errs.length && !ok) { p.className = 'pill bad'; p.textContent = 'ДАННЫЕ: ОШИБКА'; }
+    else if (ok) {
+      p.className = 'pill ' + (errs.length || Date.now() - newest > 10000 ? 'warn' : 'ok');
+      p.textContent = 'ДАННЫЕ: ' + (cfg.source === 'demo' ? 'ДЕМО' : 'API') + ' · ' + new Date(newest).toLocaleTimeString('ru-RU') + (ver ? ' · v' + ver : '');
+    } else { p.className = 'pill warn'; p.textContent = 'ДАННЫЕ: ЗАГРУЗКА…'; }
+    p.title = (errs.length ? errs.join('\n') + '\n' : '') + 'Протоколы: ' + (cfg.source === 'demo' ? 'демо (pilots/demo/fgdr)' : cfg.fgdrBase);
+    $('#pDemo').hidden = cfg.source !== 'demo';
+  }
+  /** доп. настройки таблиц протоколов (регион, N лучших) */
+  function fgTableOpts(item) {
+    if (item.id === 'f:region') {
+      var regs = CG.FGDR.regions(FG);
+      return '<div class="opts"><div class="grpbox"><span class="lbl">Регион</span><select data-fg="region"><option value="">— выберите —</option>' +
+        regs.map(function (r) { return '<option value="' + esc(r.region) + '"' + (store.fgdr.region === r.region ? ' selected' : '') + '>' + esc(r.region) + ' (' + r.n + ')</option>'; }).join('') +
+        '</select></div></div>';
+    }
+    if (item.id === 'f:regions') {
+      return '<div class="opts"><div class="grpbox"><span class="lbl">Считать лучших в регионе</span><input type="number" min="0" max="50" data-fg="teamN" value="' + esc(store.fgdr.teamN) + '"></div>' +
+        '<span class="hint">0 — сумма всех участников. Регламента командного зачёта в протоколах нет — это предварительный расчёт пульта.</span></div>';
+    }
+    return '';
+  }
+  function bindFgTableOpts(ed) {
+    $$('[data-fg]', ed).forEach(function (el) {
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', function () {
+        var k = el.dataset.fg; store.fgdr[k] = el.type === 'number' ? Math.max(0, +el.value || 0) : el.value;
+        save(); renderList(); refreshOnAir(); updatePreview(false); if (el.tagName === 'SELECT') renderEditor();
+      });
+    });
+  }
+  /** редактор карточки пилота */
+  function renderCardEditor(ed, item) {
+    var F = store.fgdr, list = CG.FGDR.pilots(FG), cur = list.filter(function (x) { return x.id === F.pilot; })[0];
+    var label = function (x) { return x.name + ' · ' + x.region; };
+    var st = fgState(item.need);
+    var html = '<h3>' + esc(item.label) + ' <small>нижний слой · 1400×170 · ' + (st.err ? '⚠ ' + esc(st.err) : st.at ? 'обновлено ' + new Date(st.at).toLocaleTimeString('ru-RU') : 'загрузка…') + '</small></h3>' +
+      '<div class="fields"><label>Пилот (начните вводить имя или регион)<input id="fgPilot" list="fgPilots" value="' + esc(cur ? label(cur) : '') + '" placeholder="Имя Фамилия"></label>';
+    if (item.id === 'p:live') {
+      html += '<label>Дисциплина<select id="fgDisc">' + CG.FGDR.DISC.map(function (d) {
+        return '<option value="' + d.key + '"' + (F.liveDisc === d.key ? ' selected' : '') + '>' + esc(d.title) + '</option>'; }).join('') + '</select></label>';
+    }
+    html += '</div><datalist id="fgPilots">' + list.map(function (x) { return '<option value="' + esc(label(x)) + '">'; }).join('') + '</datalist>';
+    F.ovr = F.ovr || {};
+    html += '<div class="fields"><label>Имя в титре (пусто — из протокола)<input data-fo="name" value="' + esc(F.ovr.name || '') + '" placeholder="' + esc(cur ? CG.FGDR.fmtName(cur.name) : '') + '"></label>' +
+      '<label>Регион в титре<input data-fo="region" value="' + esc(F.ovr.region || '') + '" placeholder="' + esc(cur ? CG.FGDR.fmtRegion(cur.region) : '') + '"></label></div>';
+    var cd = F.pilot ? CG.FGDR.card(FG, F.pilot, item.id === 'p:card' ? 'card' : F.liveDisc) : null;
+    if (cd) {
+      html += '<div class="opts"><span class="lbl">Сейчас в титре:</span><b>' + esc(cd.tag || '') + '</b> · место <b>' + esc(cd.place || '—') + '</b> · баллы <b>' + esc(cd.total || '—') + '</b></div>' +
+        '<div class="opts">' + cd.cells.map(function (c) { return '<span class="grpbox"><span class="lbl">' + esc(c.label) + '</span><b>' + esc(c.value) + '</b></span>'; }).join('') + '</div>';
+    } else html += '<div class="hint">Выберите пилота — карточка обновляется сама, раз в секунду, пока в эфире.</div>';
+    ed.innerHTML = html;
+    $('#fgPilot', ed).addEventListener('change', function () {
+      var v = this.value.trim(), m = list.filter(function (x) { return label(x) === v; })[0] ||
+        list.filter(function (x) { return x.name.toLowerCase() === v.toLowerCase(); })[0];
+      if (!m) { toast('Пилот не найден: выберите из списка', true); return; }
+      F.pilot = m.id; F.ovr = {}; save(); renderList(); renderEditor(); refreshOnAir(); updatePreview(true);
+    });
+    var ds = $('#fgDisc', ed);
+    if (ds) ds.onchange = function () { F.liveDisc = this.value; save(); renderList(); renderEditor(); refreshOnAir(); updatePreview(true); fgLoad(F.liveDisc); };
+    $$('[data-fo]', ed).forEach(function (inp) { inp.addEventListener('input', function () { F.ovr[inp.dataset.fo] = inp.value; save(); refreshOnAir(); updatePreview(false); }); });
+  }
 
   /* =================================================================== */
   /* Каталог титров                                                      */
@@ -185,6 +319,7 @@
     store.lowers.forEach(function (l, i) {
       items.push({ id: 'lower:' + i, type: 'lower', layer: 'bottom', label: 'Подпись: ' + (l.name || '—'), group: 'lowers', idx: i });
     });
+    if (useFgdr()) items = items.concat(CG.FGDR.catalog(FG, store.fgdr));
     activeSheets().forEach(function (s) {
       var p = DATA[s.key].parsed;
       if (!p) return;
@@ -228,6 +363,7 @@
 
   /** «сырой» вид таблицы: все колонки, все строки, значения из листа */
   function rawTable(item) {
+    if (item.kind === 'fgdr') return CG.FGDR.table(FG, item.id, store.fgdr);
     var s = sheetByKey(item.sheet), p = DATA[item.sheet] && DATA[item.sheet].parsed;
     if (!s || !p) return null;
     var known = p.known, team = p.mode === 'team';
@@ -288,8 +424,8 @@
 
   /** данные для графики (с правками, скрытием, сортировкой, страницами) */
   function tablePayload(item) {
-    var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet);
-    if (!raw || !s) return null;
+    var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet), fg = item.kind === 'fgdr';
+    if (!raw || (!s && !fg)) return null;
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
     var pilotKey = (raw.columns.filter(function (c) { return c.role === 'pilot'; })[0] || {}).key;
     var placeKeys = raw.columns.filter(function (c) { return CG.low(c.label) === 'место'; }).map(function (c) { return c.key; });
@@ -317,11 +453,11 @@
         return String(x).localeCompare(String(y), 'ru') || (a.i - b.i);
       }).map(function (o) { return o.r; });
     }
-    if (item.kind === 'block' && placeKeys.length) {
+    if ((item.kind === 'block' || fg) && placeKeys.length) {
       var pk = placeKeys[placeKeys.length - 1];
       rows.forEach(function (r) { var v = parseInt(r.cells[pk], 10); if (v >= 1 && v <= 3) r.hl = v; });
     }
-    var rpp = Math.max(1, +t.rpp || (item.kind === 'quali' ? 16 : 24));
+    var rpp = Math.max(1, +t.rpp || (fg ? 15 : item.kind === 'quali' ? 16 : 24));
     var pages = Math.max(1, Math.ceil(rows.length / rpp));
     var page = Math.min(Math.max(0, t.page || 0), pages - 1);
     var pageRows = rows.slice(page * rpp, page * rpp + rpp).map(function (r) {
@@ -329,8 +465,8 @@
       return { id: r.id, cells: cells, hl: r.hl || 0 };
     });
     return {
-      title: t.title != null && t.title !== '' ? t.title : (item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
-      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : sheetSubtitle(s),
+      title: t.title != null && t.title !== '' ? t.title : (fg ? raw.title : item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
+      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : (fg ? raw.subtitle : sheetSubtitle(s)), emptyText: raw.emptyText,
       team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages,
       pos: { h: t.posH || 'c', v: t.posV || 'c', scale: +t.scale || 100 }
     };
@@ -343,6 +479,13 @@
     if (item.type === 'lower') return clone(store.lowers[item.idx] || {});
     if (item.type === 'logos') return { items: (store.logos.items || []).map(function (l) { return { src: l.src, scale: (l.scale || 100) / 100 }; }), interval: +store.logos.interval || 5, plate: store.logos.plate || 'white' };
     if (item.type === 'table') return tablePayload(item);
+    if (item.type === 'pcard') {
+      if (!store.fgdr.pilot) return null;
+      var cd = CG.FGDR.card(FG, store.fgdr.pilot, item.id === 'p:card' ? 'card' : store.fgdr.liveDisc);
+      if (!cd) return null;
+      var ov = store.fgdr.ovr || {}; if (ov.name) cd.name = ov.name; if (ov.region) cd.region = ov.region;
+      return cd;
+    }
     return null;
   }
 
@@ -360,6 +503,11 @@
   }
   function itemLabel(item) {
     if (!item) return '';
+    if (item.kind === 'fgdr') {
+      var g = CG.FGDR.GROUPS.filter(function (x) { return x.k === item.group; })[0];
+      if (item.type === 'pcard') { var pl = CG.FGDR.pilots(FG).filter(function (x) { return x.id === store.fgdr.pilot; })[0]; return item.label + (pl ? ' · ' + pl.name : ''); }
+      return (g && g.k !== 'fg-common' ? g.t + ' · ' : '') + item.label;
+    }
     if (item.type === 'table') { var s = sheetByKey(item.sheet); return (s ? sheetShort(s) + ' · ' : '') + item.label; }
     return item.label;
   }
@@ -432,6 +580,7 @@
   /* Рендер: статус                                                      */
   /* =================================================================== */
   function renderStatus() {
+    if (useFgdr()) return renderFgStatus();
     var errs = [], newest = 0, loaded = 0;
     activeSheets().forEach(function (s) {
       var d = DATA[s.key];
@@ -468,7 +617,7 @@
   function renderList() {
     ITEMS = catalog();
     var html = '';
-    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(activeSheets().map(function (s) {
+    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(useFgdr() ? CG.FGDR.GROUPS : []).concat(activeSheets().map(function (s) {
       return { k: s.key, t: sheetGroupTitle(s), sheet: true };
     }));
     groups.forEach(function (g) {
@@ -508,6 +657,7 @@
     renderList(); renderEditor(); updatePreview(true);
     var it = itemById(id);
     if (it && it.sheet) loadSheet(sheetByKey(it.sheet));
+    if (it && it.kind === 'fgdr') fgLoad(it.need || 'all');
   }
 
   function renderOnAir() {
@@ -546,6 +696,7 @@
         field('Город', 'city', store.geo.city) + field('Дата', 'date', store.geo.date) + '</div>';
       bindFields(ed, store.geo);
     } else if (item.type === 'logos') { retrimOld(); renderLogosEditor(ed); }
+    else if (item.type === 'pcard') renderCardEditor(ed, item);
     else if (item.type === 'table') renderTableEditor(ed, item);
     renderOnAir();
   }
@@ -724,18 +875,18 @@
   }
 
   function renderTableEditor(ed, item) {
-    var s = sheetByKey(item.sheet), d = DATA[item.sheet], t = tcfg(item.id);
+    var s = sheetByKey(item.sheet), d = item.kind === 'fgdr' ? fgState(item.need) : DATA[item.sheet], t = tcfg(item.id);
     var raw = rawTable(item);
-    var head = '<h3>' + esc(s ? sheetGroupTitle(s) : '') + ' · ' + esc(item.label) + ' <small>' +
+    var head = '<h3>' + esc(item.kind === 'fgdr' ? itemLabel(item) : (s ? sheetGroupTitle(s) : '') + ' · ' + item.label) + ' <small>' +
       (d.err ? '⚠ ' + esc(d.err) : d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…') + '</small></h3>';
     if (!raw) { ed.innerHTML = head + '<div class="hint">Данные листа ещё не загружены или блок не найден в таблице.</div>'; return; }
     var pl = tablePayload(item);
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
-    var html = head + '<div class="fields">' +
+    var html = head + fgTableOpts(item) + '<div class="fields">' +
       '<label>Заголовок<input data-t="title" value="' + esc(t.title || '') + '" placeholder="' + esc(pl.title) + '"></label>' +
       '<label>Подзаголовок<input data-t="subtitle" value="' + esc(t.subtitle || '') + '" placeholder="' + esc(pl.subtitle) + '"></label></div>';
     html += '<div class="opts">' +
-      '<div class="grpbox"><span class="lbl">Строк на стр.</span><input type="number" min="1" max="40" data-t="rpp" value="' + esc(t.rpp || (item.kind === 'quali' ? 16 : 24)) + '"></div>' +
+      '<div class="grpbox"><span class="lbl">Строк на стр.</span><input type="number" min="1" max="40" data-t="rpp" value="' + esc(t.rpp || (item.kind === 'fgdr' ? 15 : item.kind === 'quali' ? 16 : 24)) + '"></div>' +
       '<div class="grpbox"><span class="lbl">Страница</span><button class="btn sm" data-pg="-1">◀</button><b>' + (pl.page + 1) + ' / ' + pl.pages + '</b><button class="btn sm" data-pg="1">▶</button></div>' +
       '<div class="grpbox"><span class="lbl">Автолистание, сек</span><input type="number" min="0" max="120" data-t="flip" value="' + esc(t.flip || 0) + '"></div>' +
       '<div class="grpbox"><span class="lbl">Сортировка</span><select data-t="sort"><option value="">как в таблице</option>' +
@@ -775,6 +926,7 @@
     html += '<div class="row"><span class="hint">Правки подсвечены жёлтым и имеют приоритет над таблицей. Двойной клик по ячейке — вернуть значение из таблицы.</span>' +
       '<button class="btn sm danger" id="ovrReset">Сбросить все правки</button></div>';
     ed.innerHTML = html;
+    ed.dataset.sig = raw.rows.map(function (r) { return r.id; }).join(',');
 
     // события
     $$('[data-t]', ed).forEach(function (inp) {
@@ -826,6 +978,7 @@
       });
     });
     $('#ovrReset', ed).onclick = function () { t.ovr = {}; onEdited(); renderEditor(); };
+    bindFgTableOpts(ed);
   }
   function setOvr(item, raw, inp) {
     var t = tcfg(item.id), r = inp.dataset.r, c = inp.dataset.c;
@@ -882,12 +1035,14 @@
     cfg.source = this.value; save(); syncFileBtn();
     if (cfg.source === 'file' && !OFFLINE.fileName) setTimeout(function () { $('#xlsxIn').click(); }, 50);
     cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
+    fgReset();
     renderList(); renderEditor(); reloadAll();
   };
 
   var modal = $('#settings');
   $('#btnSettings').onclick = function () {
     $('#sSheetId').value = cfg.sheetId;
+    $('#sFgBase').value = cfg.fgdrBase || '';
     $('#sPollA').value = cfg.pollActive; $('#sPollB').value = cfg.pollAll;
     $('#sTransport').value = cfg.transport; $('#sFbUrl').value = cfg.fbUrl || ''; $('#sRoom').value = cfg.room || '';
     $('#sVmixUrl').value = graphicsUrl();
@@ -901,7 +1056,8 @@
   $('#sSave').onclick = function () {
     var m = /\/d\/([\w-]+)/.exec($('#sSheetId').value); // можно вставить всю ссылку
     cfg.sheetId = m ? m[1] : $('#sSheetId').value.trim();
-    cfg.pollActive = Math.max(1, +$('#sPollA').value || 3);
+    cfg.fgdrBase = ($('#sFgBase').value.trim() || CG.DEFAULT_CONFIG.fgdrBase).replace(/\/+$/, '');
+    cfg.pollActive = Math.max(1, +$('#sPollA').value || 1);
     cfg.pollAll = Math.max(5, +$('#sPollB').value || 30);
     $$('[data-gid]').forEach(function (inp) { cfg.sheets[+inp.dataset.gid].gid = inp.value.replace(/\D/g, ''); });
     $$('[data-on]').forEach(function (inp) { cfg.sheets[+inp.dataset.on].on = inp.checked; });
@@ -970,5 +1126,5 @@
   reloadAll();
   setInterval(pollTick, 1000);
   setInterval(renderStatus, 5000);
-  window.__cg = { store: store, DATA: DATA, state: state, tablePayload: tablePayload, itemById: itemById, take: take, out: out, select: select };
+  window.__cg = { FG: FG, store: store, DATA: DATA, state: state, tablePayload: tablePayload, itemById: itemById, take: take, out: out, select: select };
 })();

@@ -7,8 +7,8 @@
 <meta name="robots" content="noindex">
 <script src="js/auth.js?v=20261008b"></script>
 <script>CGAuth.guard();</script>
-<link rel="stylesheet" href="css/fonts.css?v=20261117a">
-<link rel="stylesheet" href="css/control.css?v=20261117a">
+<link rel="stylesheet" href="css/fonts.css?v=20261118a">
+<link rel="stylesheet" href="css/control.css?v=20261118a">
 </head>
 <body>
 <header class="top">
@@ -22,9 +22,10 @@
   </div>
   <div class="tact">
     <select id="srcSel" title="Источник данных">
-      <option value="google">Google Таблица</option>
+      <option value="fgdr">Протоколы FGDR (онлайн)</option>
+      <option value="demo">Демо-протоколы (репетиция)</option>
+      <option value="google">Google Таблица (старый формат)</option>
       <option value="file">Файл Excel (без интернета)</option>
-      <option value="demo">Демо-данные (репетиция)</option>
     </select>
     <label class="btn" id="btnFile" hidden title="Выгрузка судейской таблицы: Файл → Скачать → Microsoft Excel (.xlsx)">📂 Загрузить .xlsx<input type="file" id="xlsxIn" accept=".xlsx,.xls,.ods" hidden></label>
     <button class="btn" id="btnReload" title="Перечитать таблицу сейчас">⟳ Обновить</button>
@@ -61,13 +62,14 @@
 <div class="modal" id="settings" hidden>
   <div class="dlg">
     <h2>Настройки</h2>
-    <label>ID Google-таблицы<input id="sSheetId" spellcheck="false"></label>
+    <label>Адрес API протоколов<input id="sFgBase" spellcheck="false" placeholder="https://pro.fgdrrace.online/api/protocols"></label>
+    <label>ID Google-таблицы (старый формат)<input id="sSheetId" spellcheck="false"></label>
     <h3>Листы в пульте</h3>
     <p class="hint">Отметьте листы, которые нужны в эфире. Название класса, зачёт и категория берутся из самого листа.</p>
     <div id="sGids"></div>
     <div class="grid2">
-      <label>Опрос «горячего» листа, сек<input id="sPollA" type="number" min="1" max="60"></label>
-      <label>Опрос остальных листов, сек<input id="sPollB" type="number" min="5" max="600"></label>
+      <label>Опрос протокола в эфире, сек<input id="sPollA" type="number" min="1" max="60"></label>
+      <label>Фоновый опрос, сек<input id="sPollB" type="number" min="5" max="600"></label>
     </div>
     <h3>Связь пульта с графикой</h3>
     <div class="grid2">
@@ -94,7 +96,8 @@
   </div>
 </div>
 
-<script src="js/core.js?v=20261117a"></script>
-<script src="js/control.js?v=20261117a"></script>
+<script src="js/core.js?v=20261118a"></script>
+<script src="js/fgdr.js?v=20261118a"></script>
+<script src="js/control.js?v=20261118a"></script>
 </body>
 </html>

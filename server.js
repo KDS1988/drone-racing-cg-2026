@@ -98,6 +98,19 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { res.writeHead(502); return res.end(String(e.message || e)); }
   }
 
+  if (p === '/api/fgdr') {
+    // прокси протоколов «Пилотов Будущего» (если браузер не пускает напрямую — CORS)
+    const d = url.searchParams.get('d') || '';
+    let base = url.searchParams.get('base') || process.env.FGDR_BASE || 'https://pro.fgdrrace.online/api/protocols';
+    if (!/^[a-z0-9_-]+$/i.test(d) || !/^https:\/\/[\w.-]+(\/[\w./-]*)?$/.test(base)) { res.writeHead(400); return res.end('d/base'); }
+    try {
+      const r = await fetch(base.replace(/\/+$/, '') + '/' + d, { headers: { Accept: 'application/json' } });
+      const t = await r.text();
+      res.writeHead(r.status, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+      return res.end(t);
+    } catch (e) { res.writeHead(502); return res.end(String(e.message || e)); }
+  }
+
   // ---------- статика ----------
   let file = path.normalize(path.join(ROOT, p === '/' ? '/index.html' : p));
   if (!file.startsWith(ROOT) || /(^|[\\/])\./.test(path.relative(ROOT, file))) { res.writeHead(403); return res.end(); }
