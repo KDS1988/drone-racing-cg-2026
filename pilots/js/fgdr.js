@@ -119,7 +119,9 @@
   }
   function placeOf(r) { return r.status === 'OK' && r.rank != null ? String(r.rank) : ''; }
 
-    function T(key, ms) { return fmtTime(ms, PREC[key] || 2); }
+    /** штраф: целые секунды — «+60 с», иначе время */
+  function penText(key, ms) { if (!ms) return ''; return '+' + (ms % 1000 === 0 ? (ms / 1000) + ' с' : T(key, ms)); }
+  function T(key, ms) { return fmtTime(ms, PREC[key] || 2); }
 /* ---------------- значения дисциплин ---------------- */
   function resultText(key, r) {
     if (!r) return '';
@@ -174,7 +176,7 @@
       c.time = dnf ? stText(r.status) : T(key, r.timeMs);
       c.minor = r.minorErrors ? String(r.minorErrors) : (done(r) ? '0' : '');
       c.critical = r.criticalErrors ? String(r.criticalErrors) : (done(r) ? '0' : '');
-      c.penalty = r.penaltyMs ? '+' + T(key, r.penaltyMs) : '';
+      c.penalty = penText(key, r.penaltyMs);
       c.total = dnf ? '' : T(key, r.totalTimeMs);
     }
     if (key === 'basketball') {
@@ -429,7 +431,7 @@
       out.cells.push({ label: 'Время', value: dnf ? stText(r.status) : T(mode, r.timeMs) || '—', st: st(r) });
       out.cells.push({ label: 'Ошибки', value: String(r.minorErrors || 0), st: r.minorErrors ? 'dnf' : st(r) });
       out.cells.push({ label: 'Крит.', value: String(r.criticalErrors || 0), st: r.criticalErrors ? 'dnf' : st(r) });
-      out.cells.push({ label: 'Штраф', value: r.penaltyMs ? '+' + T(mode, r.penaltyMs) : '0', st: r.penaltyMs ? 'dnf' : st(r) });
+      out.cells.push({ label: 'Штраф', value: penText(mode, r.penaltyMs) || '0', st: r.penaltyMs ? 'dnf' : st(r) });
       out.cells.push({ label: 'Итог', value: T(mode, r.totalTimeMs) || '—', st: done(r) ? 'best' : 'pending' });
     }
     return out;

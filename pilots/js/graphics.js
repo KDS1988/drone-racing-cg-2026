@@ -595,6 +595,7 @@
     q('.tag').textContent = d.tag || ''; q('.tag').style.display = d.tag ? '' : 'none';
     var setBox = function (sel, label, val) {
       var el = q(sel), b = el.querySelector('b'), nv = val == null ? '' : String(val);
+      b.style.fontSize = '';
       el.querySelector('.l').textContent = label || '';
       el.style.display = nv ? '' : 'none';
       if (b.textContent !== nv) { b.textContent = nv; if (!first) anim(b, [{ transform: 'scale(1.35)', color: '#fff' }, { transform: 'none' }], { duration: 500 }); }
@@ -612,10 +613,12 @@
         var c = cells[i], html = self.cellHTML(c);
         el.className = 'cell st-' + (c.st || 'ok');
         if (el.innerHTML !== html) { el.innerHTML = html; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+        var bb = el.querySelector('b'); if (bb) fit(bb, 0.6);
       });
     }
     this.root.classList.toggle('nocells', !cells.length);
-    fontsReady.then(function () { fit(q('.name'), 0.55); fit(q('.region'), 0.6); });
+    fontsReady.then(function () { fit(q('.name'), 0.55); fit(q('.region'), 0.6); fit(q('.place b'), 0.5); fit(q('.total b'), 0.5);
+      Array.prototype.forEach.call(self.root.querySelectorAll('.cell b'), function (b) { fit(b, 0.6); }); });
   };
   PCardGfx.prototype.update = function (d) { this.set(d, false); return Promise.resolve(); };
   PCardGfx.prototype.in = function () {
