@@ -236,6 +236,7 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
   left:48px;
   right:48px;
 }
+.race-header.race-header-bottom {top:auto;bottom:34px}
 .race-header-banner {
   height:58px;
   padding:6px 24px;

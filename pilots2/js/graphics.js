@@ -691,6 +691,7 @@
   };
 
   RaceHeaderGfx.prototype.update = function (data) {
+    this.root.classList.toggle('race-header-bottom', data.position === 'bottom');
     this.clock = data.clock;
     this.updateClock();
     this.cards.forEach(function (card, slot) {
@@ -712,10 +713,12 @@
   };
 
   RaceHeaderGfx.prototype.in = function () {
-    return anim(this.root, [{ transform: 'translateY(-28px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420 });
+    var offset = this.root.classList.contains('race-header-bottom') ? 28 : -28;
+    return anim(this.root, [{ transform: 'translateY(' + offset + 'px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420 });
   };
   RaceHeaderGfx.prototype.out = function () {
-    return anim(this.root, [{ transform: 'none', opacity: 1 }, { transform: 'translateY(-20px)', opacity: 0 }], { duration: 260 });
+    var offset = this.root.classList.contains('race-header-bottom') ? 20 : -20;
+    return anim(this.root, [{ transform: 'none', opacity: 1 }, { transform: 'translateY(' + offset + 'px)', opacity: 0 }], { duration: 260 });
   };
   RaceHeaderGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
 

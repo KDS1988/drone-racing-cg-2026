@@ -26,6 +26,7 @@
     ],
     tables: {},           // itemId → { title, subtitle, rpp, page, sort, hideEmpty, hiddenCols:{}, hiddenRows:{}, ovr:{rowId:{col:val}}, flip }
     selected: 'start',
+    raceHeaderPosition: 'top',
     logos: { items: [], interval: 5, plate: 'white' },  // карусель логотипов (правый нижний угол)
     fgdr: { pilot: '', region: '', teamN: 3, liveDisc: 'race75' } // протоколы: выбранный пилот, регион, N лучших в командном зачёте
   };
@@ -354,6 +355,7 @@
       : { elapsedMs: elapsed };
     return {
       clock: clock,
+      position: store.raceHeaderPosition === 'bottom' ? 'bottom' : 'top',
       targets: liveJson.targets || [],
       // Номера соответствуют слотам старта (id 0–3), независимо от текущего рейтинга.
       pilots: Array.from({ length: 4 }, function (_, slot) {
@@ -819,9 +821,18 @@
     else if (item.type === 'pcard') renderCardEditor(ed, item);
     else if (item.type === 'table') renderTableEditor(ed, item);
     else if (item.type === 'raceHeader') {
-      ed.innerHTML = '<h3>' + esc(item.label) + '</h3><div class="hint">' +
+      ed.innerHTML = '<h3>' + esc(item.label) + '</h3>' +
+        '<div class="fields"><label>Положение титра<select id="raceHeaderPosition">' +
+        '<option value="top">Вверху</option><option value="bottom">Внизу</option></select></label></div>' +
+        '<div class="hint">' +
         (liveJson ? 'Счётчики и время обновляются из JSON гонки. Порядок карточек соответствует номерам пилотов.' : 'Ожидаем JSON гонки.') +
         '</div>';
+      var position = $('#raceHeaderPosition', ed);
+      position.value = store.raceHeaderPosition === 'bottom' ? 'bottom' : 'top';
+      position.onchange = function () {
+        store.raceHeaderPosition = position.value;
+        onEdited();
+      };
     }
     renderOnAir();
   }
