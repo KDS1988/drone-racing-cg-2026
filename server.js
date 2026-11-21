@@ -18,7 +18,7 @@ const os = require('os');
 const PORT = +process.env.PORT || 8787;
 const ROOT = __dirname;
 // у каждого проекта (вкладки) своё состояние: /api/… — «Гонки дронов», /pilots/api/… — «Пилоты Будущего»
-const CHANNELS = ['', 'pilots'];
+const CHANNELS = ['', 'pilots', 'pilots2'];
 function stateFile(ch) { return path.join(ROOT, ch ? '.state-' + ch + '.json' : '.state.json'); }
 
 const MIME = {
@@ -55,7 +55,7 @@ function readBody(req, limit = 20e6) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p0 = decodeURIComponent(url.pathname);
-  // /pilots/api/state → канал 'pilots', путь '/api/state'
+  // /pilots/api/state и /pilots2/api/state → независимые каналы
   const m = p0.match(/^\/([\w-]+)(\/api\/.*)$/);
   const ch = m && CH[m[1]] ? m[1] : '';
   const p = m && CH[m[1]] ? m[2] : p0;
@@ -149,6 +149,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  ПИЛОТЫ БУДУЩЕГО');
   console.log(`    Графика (vMix → Web Browser):  http://localhost:${PORT}/pilots/`);
   console.log(`    Пульт управления:              http://localhost:${PORT}/pilots/control.html`);
-  ips.forEach(ip => console.log(`  В локальной сети:  http://${ip}:${PORT}/control.html   ·   http://${ip}:${PORT}/pilots/control.html`));
+  console.log('  ПИЛОТЫ БУДУЩЕГО 2');
+  console.log(`    Графика (vMix → Web Browser):  http://localhost:${PORT}/pilots2/`);
+  console.log(`    Пульт управления:              http://localhost:${PORT}/pilots2/control.html`);
+  ips.forEach(ip => console.log(`  В локальной сети:  http://${ip}:${PORT}/control.html   ·   http://${ip}:${PORT}/pilots/control.html   ·   http://${ip}:${PORT}/pilots2/control.html`));
   console.log('\n  Ctrl+C — остановить\n');
 });
