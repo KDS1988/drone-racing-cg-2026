@@ -15,7 +15,7 @@
   /* =================================================================== */
   /* Хранилище настроек пульта                                           */
   /* =================================================================== */
-  var LS_KEY = 'pf-cg2-panel-v1';
+  var LS_KEY = 'pf-cg-panel-v1';
   var DEFAULT_STORE = {
     config: clone(CG.DEFAULT_CONFIG),
     start: { tag: '2026', line1: 'Всероссийский чемпионат', line2: 'Пилотирования дронов · Москва · ЛД «Навка Арена» · 18–21 ноября' },
@@ -104,7 +104,7 @@
   }
 
   /* ---------- офлайн-источник: выгрузка таблицы в .xlsx ---------- */
-  var OFF_KEY = 'pf-cg2-offline';
+  var OFF_KEY = 'pf-cg-offline';
   var OFFLINE = { byName: {}, fileName: '', at: 0 };
   try { OFFLINE = JSON.parse(localStorage.getItem(OFF_KEY)) || OFFLINE; } catch (e) {}
   function offlineCsv(s) {
@@ -322,12 +322,46 @@
     return sheetShort(s) + ' · ' + ((p && p.comp) || s.comp) + ' · ' + ((p && p.category) || s.cat);
   }
   function pilotsIn(b) { return b.rows.filter(function (r) { return r.pilotsRaw.length; }).length; }
+  /* Live JSON гонки: отдельный источник, не смешивается с протоколами FGDR. */
+  var LIVE_TYPES=[['all','Общий прогресс'],['sim','Технический симулятор'],['basket','Дрон-баскетбол'],['race','Гонка 75 мм'],['results','Итоговые результаты'],['side','Боковой виджет']];
+  var liveJson=null,liveError='',liveBusy=false,liveRevision=null;
+  function liveFmt(v){if(v==null||!isFinite(+v))return '—';v=Math.max(0,+v);return Math.floor(v/60000)+':'+String(Math.floor(v%60000/1000)).padStart(2,'0')+'.'+String(Math.floor(v%1000)).padStart(3,'0')}
+  function liveTable(item){
+    var d=liveJson;if(!d||!Array.isArray(d.players))return null;
+    var lookup={};d.players.forEach(function(p){lookup[String(p.id)]=p});
+    var players=(Array.isArray(d.ranking)?d.ranking.map(function(id){return lookup[String(id)]}).filter(Boolean):[]);
+    d.players.forEach(function(p){if(players.indexOf(p)<0)players.push(p)});
+    var type=item.liveType,all=type==='all'||type==='results',side=type==='side',idx=type==='sim'?0:type==='basket'?1:2;
+    var cols=[{key:'place',label:'№',role:'idx'},{key:'pilot',label:'Участник',role:'pilot'}];
+    if(all){['Симулятор','Баскетбол','75 мм'].forEach(function(n,i){cols.push({key:'s'+i,label:n,role:'result'})});cols.push({key:'finish',label:'Финиш',role:'time'})}
+    else cols.push({key:'result',label:side?'Этап':'Результат',role:'result'});
+    var rows=players.slice(0,side?8:16).map(function(p,i){
+      var cells={place:String(i+1),pilot:p.name||('Участник '+p.id)};
+      if(all){for(var j=0;j<3;j++)cells['s'+j]=String((p.counts||[])[j]??0)+'/'+String((d.targets||[])[j]??'—');cells.finish=liveFmt(p.finishMs)}
+      else if(side)cells.result=p.finished?'ФИНИШ':(['Симулятор','Баскетбол','75 мм'][p.stage]||'Ожидание');
+      else cells.result=String((p.counts||[])[idx]??0)+'/'+String((d.targets||[])[idx]??'—')+' · '+liveFmt((p.durationsMs||[])[idx]);
+      return {id:String(p.id),cells:cells,hl:i<3?i+1:0};
+    });
+    return {title:item.label,subtitle:'ПИЛОТЫ БУДУЩЕГО · LIVE API',columns:cols,rows:rows,page:0,pages:1,pos:{h:side?'l':'c',v:'c',scale:side?55:100}};
+  }
+  function liveLoad(){
+    if(liveBusy)return;liveBusy=true;
+    fetch('https://sf.fgdrrace.ru/api',{cache:'no-store'}).then(function(r){if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).then(function(d){
+      if(!d||!Array.isArray(d.players)||!Array.isArray(d.ranking))throw Error('Неверный JSON: нужны players и ranking');
+      liveError='';var changed=JSON.stringify(d)!==JSON.stringify(liveJson);liveJson=d;liveRevision=d.revision;
+      if(changed){refreshOnAir();updatePreview(false)}
+    }).catch(function(e){liveError=e.message||String(e)}).then(function(){liveBusy=false;
+      var el=document.getElementById('liveJsonStatus');if(el)el.textContent=liveError?'JSON API: '+liveError:'JSON API: '+(liveRevision??'подключено');
+    });
+  }
+
   function catalog() {
     var items = [
       { id: 'start', type: 'start', layer: 'center', label: 'Стартовый титр', group: 'common' },
       { id: 'geo', type: 'geo', layer: 'bottom', label: 'Геотитр', group: 'common' },
       { id: 'logos', type: 'logos', layer: 'corner', label: 'Карусель логотипов', group: 'common', count: (store.logos.items || []).length }
     ];
+    LIVE_TYPES.forEach(function(v){items.push({id:'live:'+v[0],type:'table',kind:'live',liveType:v[0],layer:'center',label:v[1],group:'live-json'})});
     store.lowers.forEach(function (l, i) {
       items.push({ id: 'lower:' + i, type: 'lower', layer: 'bottom', label: 'Подпись: ' + (l.name || '—'), group: 'lowers', idx: i });
     });
@@ -375,6 +409,7 @@
 
   /** «сырой» вид таблицы: все колонки, все строки, значения из листа */
   function rawTable(item) {
+    if (item.kind === 'live') return liveTable(item);
     if (item.kind === 'fgdr') return CG.FGDR.table(FG, item.id, store.fgdr);
     var s = sheetByKey(item.sheet), p = DATA[item.sheet] && DATA[item.sheet].parsed;
     if (!s || !p) return null;
@@ -436,8 +471,8 @@
 
   /** данные для графики (с правками, скрытием, сортировкой, страницами) */
   function tablePayload(item) {
-    var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet), fg = item.kind === 'fgdr';
-    if (!raw || (!s && !fg)) return null;
+    var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet), fg = item.kind === 'fgdr', live = item.kind === 'live';
+    if (!raw || (!s && !fg && !live)) return null;
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
     var pilotKey = (raw.columns.filter(function (c) { return c.role === 'pilot'; })[0] || {}).key;
     var placeKeys = raw.columns.filter(function (c) { return CG.low(c.label) === 'место'; }).map(function (c) { return c.key; });
@@ -469,7 +504,7 @@
       var pk = placeKeys[placeKeys.length - 1];
       rows.forEach(function (r) { var v = parseInt(r.cells[pk], 10); if (v >= 1 && v <= 3) r.hl = v; });
     }
-    var rpp = Math.max(1, +t.rpp || (fg ? 15 : item.kind === 'quali' ? 16 : 24));
+    var rpp = Math.max(1, +t.rpp || (fg || live ? 15 : item.kind === 'quali' ? 16 : 24));
     var pages = Math.max(1, Math.ceil(rows.length / rpp));
     var page = Math.min(Math.max(0, t.page || 0), pages - 1);
     var pageRows = rows.slice(page * rpp, page * rpp + rpp).map(function (r) {
@@ -477,10 +512,10 @@
       return { id: r.id, cells: cells, hl: r.hl || 0 };
     });
     return {
-      title: t.title != null && t.title !== '' ? t.title : (fg ? raw.title : item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
-      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : (fg ? raw.subtitle : sheetSubtitle(s)), emptyText: raw.emptyText,
+      title: t.title != null && t.title !== '' ? t.title : ((fg || live) ? raw.title : item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
+      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : ((fg || live) ? raw.subtitle : sheetSubtitle(s)), emptyText: raw.emptyText,
       team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages,
-      pos: { h: t.posH || 'c', v: t.posV || 'c', scale: +t.scale || 100 }
+      pos: { h: t.posH || (live && item.liveType === 'side' ? 'l' : 'c'), v: t.posV || 'c', scale: +t.scale || (live && item.liveType === 'side' ? 55 : 100) }
     };
   }
 
@@ -520,6 +555,7 @@
       if (item.type === 'pcard') { var pl = CG.FGDR.pilots(FG).filter(function (x) { return x.id === store.fgdr.pilot; })[0]; return item.label + (pl ? ' · ' + pl.name : ''); }
       return (g && g.k !== 'fg-common' ? g.t + ' · ' : '') + item.label;
     }
+    if (item.kind === 'live') return item.label;
     if (item.type === 'table') { var s = sheetByKey(item.sheet); return (s ? sheetShort(s) + ' · ' : '') + item.label; }
     return item.label;
   }
@@ -629,7 +665,7 @@
   function renderList() {
     ITEMS = catalog();
     var html = '';
-    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(useFgdr() ? CG.FGDR.GROUPS : []).concat(activeSheets().map(function (s) {
+    var groups = [{ k: 'common', t: 'Общие' }, { k: 'live-json', t: 'LIVE JSON · Гонка' }, { k: 'lowers', t: 'Нижние подписи' }].concat(useFgdr() ? CG.FGDR.GROUPS : []).concat(activeSheets().map(function (s) {
       return { k: s.key, t: sheetGroupTitle(s), sheet: true };
     }));
     groups.forEach(function (g) {
@@ -670,6 +706,7 @@
     var it = itemById(id);
     if (it && it.sheet) loadSheet(sheetByKey(it.sheet));
     if (it && it.kind === 'fgdr') fgLoad(it.need || 'all');
+    if (it && it.kind === 'live') liveLoad();
   }
 
   function renderOnAir() {
@@ -1174,5 +1211,6 @@
   reloadAll();
   setInterval(pollTick, 1000);
   setInterval(renderStatus, 5000);
+  liveLoad();setInterval(liveLoad,1000);
   window.__cg = { FG: FG, store: store, DATA: DATA, state: state, tablePayload: tablePayload, itemById: itemById, take: take, out: out, select: select };
 })();
