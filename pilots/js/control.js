@@ -342,7 +342,7 @@
       else cells.result=String((p.counts||[])[idx]??0)+'/'+String((d.targets||[])[idx]??'—')+' · '+liveFmt((p.durationsMs||[])[idx]);
       return {id:String(p.id),cells:cells,hl:i<3?i+1:0};
     });
-    return {title:item.label,subtitle:'ПИЛОТЫ БУДУЩЕГО · LIVE API',columns:cols,rows:rows,page:0,pages:1,pos:{h:side?'l':'c',v:'c',scale:side?55:100}};
+    return {title:item.label,subtitle:'ПИЛОТЫ БУДУЩЕГО · LIVE API',columns:cols,rows:rows,defaultHidden:{},page:0,pages:1,pos:{h:side?'l':'c',v:'c',scale:side?55:100}};
   }
   function liveAccept(d){
     if(!d||!Array.isArray(d.players))throw Error('Неверный JSON: отсутствует массив players');
@@ -353,10 +353,10 @@
   function liveLoad(){
     if(liveBusy)return;liveBusy=true;
     var sources=['https://sf.fgdrrace.ru/api'];
-    if(!/github\\.io$/i.test(location.hostname))sources.push('../api/race');
+    if(!/github[.]io$/i.test(location.hostname))sources.push('../api/race');
     function trySource(n){
       return fetch(sources[n],{cache:'no-store'}).then(function(r){if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).catch(function(e){
-        if(n+1<sources.length)return trySource(n+1);
+        if(n+1<sources.length)return trySource(n+1).catch(function(nextErr){throw Error('Прямой API: '+((e&&e.message)||e)+'; прокси: '+((nextErr&&nextErr.message)||nextErr));});
         throw e;
       });
     }
