@@ -404,27 +404,43 @@
     q('.pg').textContent = d.pages > 1 ? (d.page + 1) + ' / ' + d.pages : '';
     q('.pg').style.display = d.pages > 1 ? '' : 'none';
   };
-  TableGfx.prototype.rowsIn = function (delay) {
-    var rs = this.root.querySelectorAll('.rows > *'), last = Promise.resolve(), W = this.L.W;
-    for (var i = 0; i < rs.length; i++) {
+  function tableItemsIn(items, delay, width) {
+    var last = Promise.resolve();
+    Array.prototype.forEach.call(items, function (item, i) {
       var dl = (delay || 0) + i * 45;
-      last = anim(rs[i], [{ opacity: 0, transform: 'translateX(-90px)' }, { opacity: 1, transform: 'none' }], { duration: 480, delay: dl });
-      var g = rs[i].querySelector('.glint');
-      if (g) anim(g, [{ left: '-220px', opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .85 }, { left: (W - 200) + 'px', opacity: 0 }], { duration: 700, delay: dl + 160, easing: 'ease-in-out' });
-    }
+      last = anim(item, [{ opacity: 0, transform: 'translateX(-90px)' }, { opacity: 1, transform: 'none' }], { duration: 480, delay: dl });
+      var glint = item.querySelector('.glint');
+      if (glint) anim(glint, [{ left: '-220px', opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .85 }, { left: ((width || item.offsetWidth) - 200) + 'px', opacity: 0 }], { duration: 700, delay: dl + 160, easing: 'ease-in-out' });
+    });
     return last;
+  }
+  function tableItemsOut(items) {
+    var last = Promise.resolve();
+    Array.prototype.forEach.call(items, function (item, i) {
+      last = anim(item, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(90px)' }], { duration: 260, delay: i * 22, easing: 'ease-in' });
+    });
+    return last;
+  }
+  function tableHeadIn(head, logo) {
+    anim(head, [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 600, easing: EASE_IO });
+    anim(logo, [{ opacity: 0, transform: 'scale(.6) rotate(-6deg)' }, { opacity: 1, transform: 'none' }], { duration: 520, delay: 120 });
+  }
+  function tableHeadOut(head, delay) {
+    return anim(head, [
+      { clipPath: 'inset(-30px -40px -30px -40px)', opacity: 1, transform: 'none' },
+      { opacity: 1, offset: .5 },
+      { clipPath: 'inset(-30px -40px -30px 100%)', opacity: 0, transform: 'translateX(30px)' }
+    ], { duration: 520, delay: delay, easing: 'cubic-bezier(.45,0,.4,1)' });
+  }
+  TableGfx.prototype.rowsIn = function (delay) {
+    return tableItemsIn(this.root.querySelectorAll('.rows > *'), delay, this.L.W);
   };
   TableGfx.prototype.rowsOut = function () {
-    var rs = this.root.querySelectorAll('.rows > *'), last = Promise.resolve();
-    for (var i = 0; i < rs.length; i++) {
-      last = anim(rs[i], [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(90px)' }], { duration: 260, delay: i * 22, easing: 'ease-in' });
-    }
-    return last;
+    return tableItemsOut(this.root.querySelectorAll('.rows > *'));
   };
   TableGfx.prototype.in = function () {
     var q = this.root.querySelector.bind(this.root);
-    anim(q('.head'), [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }], { duration: 600, easing: EASE_IO });
-    anim(q('.head .logo'), [{ opacity: 0, transform: 'scale(.6) rotate(-6deg)' }, { opacity: 1, transform: 'none' }], { duration: 520, delay: 120 });
+    tableHeadIn(q('.head'), q('.head .logo'));
     anim(q('.head .stripes'), [{ transform: 'translateX(-260px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 650, delay: 200 });
     anim(q('.t1'), [{ opacity: 0, textShadow: '-16px 0 0 #01D7FB, 16px 0 0 #8545FD' }, { opacity: 1, offset: .4, textShadow: '6px 0 0 #01D7FB, -6px 0 0 #8545FD' }, { opacity: 1, textShadow: '4px 4px 0 ' + cssVar('--title-shadow', '#01D7FB') }], { duration: 600, delay: 250 });
     anim(q('.cols'), [{ opacity: 0, transform: 'translateY(-12px)' }, { opacity: 1, transform: 'none' }], { duration: 350, delay: 300 });
@@ -439,11 +455,7 @@
     anim(q('.cols'), [{ opacity: 1 }, { opacity: 0, transform: 'translateX(40px)' }], { duration: 300, delay: Math.max(0, d - 120), easing: 'ease-in' });
     anim(q('.head .t1'), [{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: d, easing: 'linear' });
     anim(q('.head .t2'), [{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: d, easing: 'linear' });
-    return anim(q('.head'), [
-      { clipPath: 'inset(-30px -40px -30px -40px)', opacity: 1, transform: 'none' },
-      { opacity: 1, offset: .5 },
-      { clipPath: 'inset(-30px -40px -30px 100%)', opacity: 0, transform: 'translateX(30px)' }
-    ], { duration: 520, delay: d, easing: 'cubic-bezier(.45,0,.4,1)' });
+    return tableHeadOut(q('.head'), d);
   };
   TableGfx.prototype.update = function (d) {
     var self = this, old = this.data, nl = this.layout(d);
@@ -658,6 +670,7 @@
     this.root = h('div', 'race-header',
       '<div class="race-header-banner"><img src="assets/logo-white-wide.png" alt="Пилоты Будущего">' +
       '<span class="race-header-clock" aria-label="Время гонки"></span></div><div class="race-header-cards"></div>');
+    this.banner = this.root.querySelector('.race-header-banner');
     this.clockEl = this.root.querySelector('.race-header-clock');
     var list = this.root.querySelector('.race-header-cards');
     this.cards = Array.from({ length: 4 }, function (_, slot) {
@@ -671,6 +684,7 @@
         metrics.appendChild(metric);
         return { value: metric.querySelector('b'), fill: metric.querySelector('.race-header-track span') };
       });
+      card.appendChild(h('div', 'glint'));
       list.appendChild(card);
       return { name: card.querySelector('.race-header-name'), stages: stages };
     });
@@ -713,12 +727,16 @@
   };
 
   RaceHeaderGfx.prototype.in = function () {
-    var offset = this.root.classList.contains('race-header-bottom') ? 28 : -28;
-    return anim(this.root, [{ transform: 'translateY(' + offset + 'px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420 });
+    tableHeadIn(this.banner, this.banner.querySelector('img'));
+    anim(this.clockEl, [{ opacity: 0 }, { opacity: 1 }], { duration: 350, delay: 300 });
+    return tableItemsIn(this.root.querySelectorAll('.race-header-card'), 380);
   };
   RaceHeaderGfx.prototype.out = function () {
-    var offset = this.root.classList.contains('race-header-bottom') ? 20 : -20;
-    return anim(this.root, [{ transform: 'none', opacity: 1 }, { transform: 'translateY(' + offset + 'px)', opacity: 0 }], { duration: 260 });
+    var cards = this.root.querySelectorAll('.race-header-card');
+    var delay = Math.min(120 + cards.length * 22, 380);
+    tableItemsOut(cards);
+    anim(this.clockEl, [{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: delay, easing: 'linear' });
+    return tableHeadOut(this.banner, delay);
   };
   RaceHeaderGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
 

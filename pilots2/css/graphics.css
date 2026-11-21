@@ -141,7 +141,7 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .tbl .row::before{content:'';position:absolute;inset:0;background:var(--plate);z-index:-1;border-left:6px solid var(--p500)}
 .tbl .row:nth-child(even)::before{background:var(--plate-2)}
 .tbl .row > div{padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:clip;position:relative}
-.tbl .row .glint{position:absolute;top:0;bottom:0;width:140px;left:-220px;background:linear-gradient(90deg,transparent,rgba(133,69,253,.45),transparent);pointer-events:none;padding:0;opacity:0}
+.tbl .row .glint,.race-header-card .glint{position:absolute;top:0;bottom:0;width:140px;left:-220px;background:linear-gradient(90deg,transparent,rgba(133,69,253,.45),transparent);pointer-events:none;padding:0;opacity:0}
 .tbl .c{text-align:center}
 .tbl .l{text-align:left}
 .tbl .pilot{font-size:1.04em}
@@ -257,6 +257,8 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 }
 .race-header-card {
   --pilot-color:#ff647d;
+  position:relative;
+  overflow:hidden;
   min-width:0;
   padding:15px 17px 17px;
   border:1px solid #594481;
