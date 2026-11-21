@@ -348,7 +348,7 @@
     if(!d||!Array.isArray(d.players))throw Error('Неверный JSON: отсутствует массив players');
     if(!Array.isArray(d.ranking))d.ranking=d.players.map(function(p){return p.id});
     liveError='';var changed=JSON.stringify(d)!==JSON.stringify(liveJson);liveJson=d;liveRevision=d.revision;
-    if(changed){refreshOnAir();updatePreview(false)}
+    if(changed){try{refreshOnAir();updatePreview(false)}catch(e){console.error('Live graphics refresh:',e)}}
   }
   function liveLoad(){
     if(liveBusy)return;liveBusy=true;
@@ -487,7 +487,7 @@
   function tablePayload(item) {
     var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet), fg = item.kind === 'fgdr', live = item.kind === 'live';
     if (!raw || (!s && !fg && !live)) return null;
-    var hiddenCols = t.hiddenCols || raw.defaultHidden;
+    var hiddenCols = t.hiddenCols || raw.defaultHidden || {};
     var pilotKey = (raw.columns.filter(function (c) { return c.role === 'pilot'; })[0] || {}).key;
     var placeKeys = raw.columns.filter(function (c) { return CG.low(c.label) === 'место'; }).map(function (c) { return c.key; });
     var rows = raw.rows.map(function (r) {
@@ -1222,9 +1222,10 @@
   $('#pgmFrame').src = (useFirebase() ? graphicsUrl() + '&' : 'index.html?') + 'checker=1';
 
   renderList(); renderEditor(); renderOnAir();
-  reloadAll();
+  // Live JSON must start even when a separate legacy data source fails to initialize.
+  liveLoad();setInterval(liveLoad,3000);
+  try { reloadAll(); } catch (e) { console.error('Legacy source initialization:',e); }
   setInterval(pollTick, 1000);
   setInterval(renderStatus, 5000);
-  liveLoad();setInterval(liveLoad,1000);
   window.__cg = { FG: FG, store: store, DATA: DATA, state: state, tablePayload: tablePayload, itemById: itemById, take: take, out: out, select: select };
 })();
