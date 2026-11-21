@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Live API · Пилоты Будущего 2</title>
+<style>
+:root{color-scheme:dark}body{font:15px system-ui,Arial;background:#101725;color:#e9f0fc;margin:0;padding:20px}h1{font-size:24px;margin:0 0 8px}p{color:#a9bad0}a{color:#83c9ff}.bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:15px 0}button,.file{background:#234a78;color:white;border:1px solid #4d77a5;border-radius:7px;padding:9px 13px;cursor:pointer}input{max-width:100%}.status{padding:10px;border:1px solid #445b7c;border-radius:8px;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.card{border:1px solid #34445c;background:#1a2435;border-radius:12px;padding:15px;border-left:6px solid var(--c)}.name{font-size:18px;font-weight:700}.place{font-size:27px;font-weight:800}.meta{color:#b4c4d8;margin-top:7px}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{padding:9px;border-bottom:1px solid #35455c;text-align:left}th{color:#9fb6d4}small{color:#9fb6d4}#error{color:#ffac9c;white-space:pre-wrap}
+</style></head><body>
+<h1>Live API · Пилоты Будущего 2</h1>
+<p>Симулятор → Баскетбол → 75 мм · данные из <a href="https://sf.fgdrrace.ru/api" target="_blank" rel="noopener">sf.fgdrrace.ru/api</a></p>
+<div class="bar"><button id="refresh">Обновить</button><label class="file">Загрузить JSON для проверки<input id="file" type="file" accept=".json,application/json" hidden></label><label><input type="checkbox" id="auto" checked> Автообновление раз в секунду</label><a href="control.html">Вернуться к пульту</a></div>
+<div id="status" class="status">Подключение к API…</div><div id="error"></div><div id="cards" class="grid"></div>
+<h2>Результаты и этапы</h2><div style="overflow:auto"><table><thead><tr><th>Место</th><th>Участник</th><th>Симулятор</th><th>Баскетбол</th><th>75 мм</th><th>Финиш</th></tr></thead><tbody id="results"></tbody></table></div>
+<h2>Последние отметки</h2><div style="overflow:auto"><table><thead><tr><th>Участник</th><th>Этап</th><th>Время от старта</th></tr></thead><tbody id="events"></tbody></table></div>
+<script>
+(function(){
+'use strict';
+var endpoint='https://sf.fgdrrace.ru/api', busy=false, lastRevision=null, offline=false;
+var $=function(s){return document.querySelector(s)};
+var stages=['Симулятор','Баскетбол','75 мм'];
+function fmt(ms){if(ms==null||!Number.isFinite(Number(ms)))return '—';var n=Math.max(0,Number(ms));return Math.floor(n/60000)+':'+String(Math.floor(n%60000/1000)).padStart(2,'0')+'.'+String(Math.floor(n%1000)).padStart(3,'0')}
+function el(tag,text){var e=document.createElement(tag);e.textContent=text==null?'—':String(text);return e}
+function cell(row,value){row.appendChild(el('td',value))}
+function valid(d){if(!d||!Array.isArray(d.players)||!Array.isArray(d.ranking))throw Error('Неожиданный формат: требуются players и ranking');if(d.schemaVersion!=null&&d.schemaVersion!==1)throw Error('Версия API не поддерживается: '+d.schemaVersion);return d}
+function show(d,source){
+valid(d);var players=new Map(d.players.map(function(p){return [p.id,p]})),order=d.ranking.map(function(id){return players.get(id)}).filter(Boolean);
+d.players.forEach(function(p){if(!order.includes(p))order.push(p)});
+$('#cards').replaceChildren();$('#results').replaceChildren();$('#events').replaceChildren();
+var colors={red:'#ed4d5a',yellow:'#e4c541',green:'#39c784',blue:'#428eff'};
+order.forEach(function(p,i){var c=el('div','');c.className='card';c.style.setProperty('--c',colors[p.color]||'#8090aa');
+var pos=el('div',(i+1)+' место');pos.className='place';c.appendChild(pos);
+var name=el('div',p.name||'Участник '+p.id);name.className='name';c.appendChild(name);
+var progress=el('div',(p.finished?'Финиш':stages[p.stage]||'Ожидание')+' · '+(p.counts||[]).map(function(v,j){return v+'/'+((d.targets||[])[j]??'?')}).join(' · '));progress.className='meta';c.appendChild(progress);
+var time=el('div','Финиш: '+fmt(p.finishMs)+' · Лучший круг: '+fmt(p.bestLapMs));time.className='meta';c.appendChild(time);$('#cards').appendChild(c);
+var tr=el('tr','');cell(tr,i+1);cell(tr,p.name||p.id);[0,1,2].forEach(function(j){cell(tr,((p.counts||[])[j]??0)+' / '+((d.targets||[])[j]??'?')+' · '+fmt((p.durationsMs||[])[j]))});cell(tr,fmt(p.finishMs));$('#results').appendChild(tr)});
+(d.events||[]).slice(-12).reverse().forEach(function(e){var tr=el('tr','');cell(tr,(players.get(e.player)||{}).name||e.player);cell(tr,stages[e.stage]||e.stage);cell(tr,fmt(e.time));$('#events').appendChild(tr)});
+lastRevision=d.revision;$('#status').textContent=source+' · '+({ready:'Готовность',running:'Гонка идёт',paused:'Пауза',finished:'Финиш'}[d.status]||d.status||'—')+' · версия '+(d.revision??'—')+' · время '+fmt(d.elapsedMs)+' · обновлено '+new Date().toLocaleTimeString('ru-RU');$('#error').textContent='';
+}
+async function load(){if(busy||offline)return;busy=true;try{var r=await fetch(endpoint,{cache:'no-store',headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);show(await r.json(),'LIVE API')}catch(e){$('#error').textContent='Не удалось получить live JSON: '+e.message+'. Возможно, сервер API запрещает CORS для GitHub Pages. Для проверки загрузите JSON-файл; это не live-подключение.';$('#status').textContent='LIVE API недоступен'+(lastRevision!=null?' · последний снимок '+lastRevision:'')}finally{busy=false}}
+$('#refresh').addEventListener('click',function(){offline=false;load()});$('#file').addEventListener('change',async function(e){var f=e.target.files[0];if(!f)return;try{show(JSON.parse(await f.text()),'ФАЙЛ (не live)');offline=true;$('#auto').checked=false}catch(err){$('#error').textContent='Ошибка файла: '+err.message}});setInterval(function(){if($('#auto').checked){offline=false;load()}},1000);load();
+})();
+</script></body></html>
