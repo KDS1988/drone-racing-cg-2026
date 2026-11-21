@@ -3,7 +3,7 @@ var items=[['all','Общий прогресс',1920,1080],['sim','Технич�
 var selected=items[0],active=null,whitekey=false,key='pf-cg2-hud-output-v1',channel;
 var $=function(id){return document.getElementById(id)};
 try{channel=new BroadcastChannel('pf-cg2-hud-output')}catch(e){}
-function url(it){return 'https://sf.fgdrrace.ru/hud/'+it[0]}
+function url(it){return 'native-hud.html?type='+encodeURIComponent(it[0])}
 function render(){var u=url(selected);$('preview').src=u;$('previewName').textContent=selected[1];$('open').href=u;$('vmixUrl').value=new URL('hud-output.html',location.href).href;$('previewBox').classList.toggle('side',selected[0]==='side');$('preview').classList.toggle('whitekey',whitekey);Array.from($('sources').children).forEach(function(b){b.classList.toggle('selected',b.dataset.id===selected[0])});$('status').textContent='PREVIEW: '+selected[1]+' · '+selected[2]+'×'+selected[3]+' · оригинальный HUD'}
 function setProgram(it){active=it;$('program').src=it?url(it):'about:blank';$('programName').textContent=it?it[1]:'—';$('programBox').classList.toggle('side',!!it&&it[0]==='side');$('program').classList.toggle('whitekey',whitekey)}
 function send(it){var data={id:it?it[0]:null,whitekey:whitekey,at:Date.now()};try{localStorage.setItem(key,JSON.stringify(data))}catch(e){}try{if(channel)channel.postMessage(data)}catch(e){}setProgram(it)}
