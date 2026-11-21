@@ -338,7 +338,7 @@
     if(all){['Симулятор','Баскетбол','75 мм'].forEach(function(n,i){cols.push({key:'s'+i,label:n,role:'result'})});cols.push({key:'finish',label:'Финиш',role:'time'})}
     else cols.push({key:'result',label:'Результат',role:'result'});
     var rows=players.slice(0,16).map(function(p,i){
-      var cells={place:String(i+1),pilot:p.name||('Участник '+p.id)};
+      var cells={place:String(i+1),pilot:CG.formatName(p.name)||('Участник '+p.id)};
       if(all){for(var j=0;j<3;j++)cells['s'+j]=String((p.counts||[])[j]??0)+'/'+String((d.targets||[])[j]??'—');cells.finish=liveFmt(p.finishMs)}
       else cells.result=String((p.counts||[])[idx]??0)+'/'+String((d.targets||[])[idx]??'—')+' · '+liveFmt((p.durationsMs||[])[idx]);
       return {id:String(p.id),cells:cells,hl:i<3?i+1:0};
