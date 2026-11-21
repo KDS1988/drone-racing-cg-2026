@@ -352,7 +352,8 @@
   }
   function liveLoad(){
     if(liveBusy)return;liveBusy=true;
-    var sources=['https://sf.fgdrrace.ru/api'];
+    var configuredProxy=(localStorage.getItem('cg-race-proxy-url')||'').trim();
+    var sources=configuredProxy?[configuredProxy,'https://sf.fgdrrace.ru/api']:['https://sf.fgdrrace.ru/api'];
     if(!/github[.]io$/i.test(location.hostname))sources.push('../api/race');
     function trySource(n){
       return fetch(sources[n],{cache:'no-store'}).then(function(r){if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).catch(function(e){
@@ -1227,6 +1228,14 @@
 
   renderList(); renderEditor(); renderOnAir();
   // Live JSON must start even when a separate legacy data source fails to initialize.
+  var proxyInput=document.getElementById('raceProxyUrl');
+  var proxySave=document.getElementById('raceProxySave');
+  if(proxyInput)proxyInput.value=localStorage.getItem('cg-race-proxy-url')||'';
+  if(proxySave)proxySave.addEventListener('click',function(){
+    var url=(proxyInput.value||'').trim();
+    if(url && !/^https:\/\/[^\s]+$/i.test(url)){alert('Нужен полный HTTPS-адрес прокси');return;}
+    localStorage.setItem('cg-race-proxy-url',url);liveJson=null;liveError='';liveBusy=false;liveLoad();
+  });
   liveLoad();setInterval(liveLoad,3000);
   try { reloadAll(); } catch (e) { console.error('Legacy source initialization:',e); }
   setInterval(pollTick, 1000);
