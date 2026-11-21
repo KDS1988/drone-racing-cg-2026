@@ -98,6 +98,22 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { res.writeHead(502); return res.end(String(e.message || e)); }
   }
 
+  if (p === '/api/race' && req.method === 'GET') {
+    // Прокси live-табло гонки: фиксированный upstream, чтобы обойти CORS в браузере.
+    try {
+      const r = await fetch('https://sf.fgdrrace.ru/api', {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000)
+      });
+      const t = await r.text();
+      res.writeHead(r.status, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+      return res.end(t);
+    } catch (e) {
+      res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end('race API proxy: ' + String(e.message || e));
+    }
+  }
+
   if (p === '/api/fgdr') {
     // прокси протоколов «Пилотов Будущего» (если браузер не пускает напрямую — CORS)
     const d = url.searchParams.get('d') || '';
