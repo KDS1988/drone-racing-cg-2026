@@ -360,6 +360,7 @@
         throw e;
       });
     }
+    var el0=document.getElementById('liveJsonStatus');if(el0){el0.textContent='JSON: запрос…';el0.title='Получаем данные гонки';}
     trySource(0).then(liveAccept).catch(function(e){liveError=(e&&e.message)||String(e)}).then(function(){liveBusy=false;
       var el=document.getElementById('liveJsonStatus');if(el){
         el.textContent=liveError?'JSON: ОШИБКА':'JSON: '+(liveRevision==null?'OK':'v'+liveRevision);
@@ -974,13 +975,13 @@
   }
 
   function renderTableEditor(ed, item) {
-    var s = sheetByKey(item.sheet), d = item.kind === 'fgdr' ? fgState(item.need) : DATA[item.sheet], t = tcfg(item.id);
+    var s = sheetByKey(item.sheet), d = item.kind === 'live' ? {at:liveJson ? Date.now():0,err:liveError} : item.kind === 'fgdr' ? fgState(item.need) : (DATA[item.sheet] || {}), t = tcfg(item.id);
     var raw = rawTable(item);
     var head = '<h3>' + esc(item.kind === 'fgdr' ? itemLabel(item) : (s ? sheetGroupTitle(s) : '') + ' · ' + item.label) + ' <small>' +
       (d.err ? '⚠ ' + esc(d.err) : d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…') + '</small></h3>';
     if (!raw) { ed.innerHTML = head + '<div class="hint">Данные листа ещё не загружены или блок не найден в таблице.</div>'; return; }
     var pl = tablePayload(item);
-    var hiddenCols = t.hiddenCols || raw.defaultHidden;
+    var hiddenCols = t.hiddenCols || raw.defaultHidden || {};
     var html = head + fgTableOpts(item) + '<div class="fields">' +
       '<label>Заголовок<input data-t="title" value="' + esc(t.title || '') + '" placeholder="' + esc(pl.title) + '"></label>' +
       '<label>Подзаголовок<input data-t="subtitle" value="' + esc(t.subtitle || '') + '" placeholder="' + esc(pl.subtitle) + '"></label></div>';
