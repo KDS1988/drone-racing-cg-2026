@@ -329,7 +329,7 @@
   function liveTable(item){
     var d=liveJson;if(!d||!Array.isArray(d.players))return null;
     var lookup={};d.players.forEach(function(p){lookup[String(p.id)]=p});
-    var players=(Array.isArray(d.ranking)?d.ranking.map(function(id){return lookup[String(id)]}).filter(Boolean):[]);
+    var players=(Array.isArray(d.ranking)?d.ranking.map(function(id){return lookup[String(id && typeof id==='object'?id.id:id)]}).filter(Boolean):[]);
     d.players.forEach(function(p){if(players.indexOf(p)<0)players.push(p)});
     var type=item.liveType,all=type==='all'||type==='results',side=type==='side',idx=type==='sim'?0:type==='basket'?1:2;
     var cols=[{key:'place',label:'№',role:'idx'},{key:'pilot',label:'Участник',role:'pilot'}];
@@ -366,6 +366,9 @@
         el.textContent=liveError?'JSON: ОШИБКА':'JSON: '+(liveRevision==null?'OK':'v'+liveRevision);
         el.title=liveError?'Не удалось получить https://sf.fgdrrace.ru/api. Возможна блокировка CORS. '+liveError:'Данные отдельного API гонки получены';
         el.className='pill '+(liveError?'bad':'ok');
+        var detail=document.getElementById('liveJsonDetail');
+        if(detail){detail.hidden=!liveError;detail.textContent=liveError?'API гонки: '+liveError+' — прямой доступ из GitHub Pages может блокироваться CORS. Для эфира нужен CORS на API или серверный прокси.':'';}
+
       }
     });
   }
