@@ -139,7 +139,7 @@
       var id = newOrder[i], from = oldPos[id];
       if (from == null || from <= i) continue;
       var p = nowPlayers[id], crossed = oldOrder.slice(i, from);
-      var meaningful = crossed.some(function (otherId) {
+      var meaningful = crossed.every(function (otherId) {
         return progressSignature(p) !== progressSignature(nowPlayers[otherId]);
       });
       if (meaningful) return { player: p, from: from + 1, to: i + 1, isLeader: i === 0 };
@@ -186,7 +186,7 @@
         return;
       }
     }
-    if (state.race && state.race.data && state.race.data.mode === 'position' || state.race && state.race.data && state.race.data.mode === 'newLeader') {
+    if (state.race && state.race.data && (state.race.data.mode === 'position' || state.race.data.mode === 'newLeader')) {
       if (Date.now() < DIRECTOR.eventUntil) return;
     }
     setDirectorLayer('leader', leader, { paused: data.status === 'paused' });
