@@ -45,6 +45,7 @@
   });
   if (!store.collapsed) store.collapsed = {};
   if (!store.logos || !Array.isArray(store.logos.items)) store.logos = { items: [], interval: 5, plate: 'white' };
+  store.director = Object.assign({ enabled: true, changeSeconds: 5 }, store.director || {});
   var saveTimer = null;
   function save() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }, 250); }
   var cfg = store.config;
@@ -77,6 +78,7 @@
 
   /* ---------- live API гонки: один JSON-снимок со всеми четырьмя пилотами ---------- */
   var RACE = { data: null, at: 0, err: null, busy: false, last: 0, hash: '' };
+  var DIRECTOR = { eventUntil: 0 };
   function raceChanged() {
     renderList();
     refreshOnAir();
@@ -99,10 +101,120 @@
       if (!j || !Array.isArray(j.players)) throw new Error('API вернул неожиданный JSON: нет массива players');
       RACE.err = null; RACE.at = Date.now();
       var hash = JSON.stringify(j);
-      if (force || hash !== RACE.hash) { RACE.hash = hash; RACE.data = j; raceChanged(); }
+      if (force || hash !== RACE.hash) {
+        var previous = RACE.data;
+        RACE.hash = hash; RACE.data = j;
+        updateDirector(j, previous);
+        raceChanged();
+      }
     }).catch(function (e) {
       RACE.err = e && e.message ? e.message : String(e);
     }).then(function () { RACE.busy = false; renderStatus(); });
+  }
+
+
+  /* ---------- автоматический режиссёр: лидер, обгоны, победитель ---------- */
+  function racePlayers(data) {
+    var map = {};
+    (data && data.players || []).forEach(function (p) { map[p.id] = p; });
+    return map;
+  }
+  function raceOrder(data) {
+    var map = racePlayers(data), ids = [];
+    (data && data.ranking || []).forEach(function (id) { if (map[id] && ids.indexOf(id) < 0) ids.push(id); });
+    (data && data.players || []).forEach(function (p) { if (ids.indexOf(p.id) < 0) ids.push(p.id); });
+    return ids;
+  }
+  function progressSignature(player) {
+    if (!player) return '';
+    if (player.finished && player.finishMs != null) return 'F:' + player.finishMs;
+    return [player.stage].concat(player.counts || []).join(':');
+  }
+  function findPositionChange(previous, current) {
+    if (!previous || !current) return null;
+    var oldOrder = raceOrder(previous), newOrder = raceOrder(current), oldPos = {};
+    oldOrder.forEach(function (id, i) { oldPos[id] = i; });
+    var nowPlayers = racePlayers(current);
+    for (var i = 0; i < newOrder.length; i++) {
+      var id = newOrder[i], from = oldPos[id];
+      if (from == null || from <= i) continue;
+      var p = nowPlayers[id], crossed = oldOrder.slice(i, from);
+      var meaningful = crossed.some(function (otherId) {
+        return progressSignature(p) !== progressSignature(nowPlayers[otherId]);
+      });
+      if (meaningful) return { player: p, from: from + 1, to: i + 1, isLeader: i === 0 };
+    }
+    return null;
+  }
+  function setDirectorLayer(mode, player, extra) {
+    if (!player) { state.race = null; sendState(); return; }
+    var d = {
+      mode: mode, player: {
+        id: player.id, name: player.name || 'Участник', color: player.color || 'blue',
+        stage: player.stage, finished: !!player.finished, counts: player.counts || [],
+        finishMs: player.finishMs, bestLapMs: player.bestLapMs
+      },
+      elapsedMs: RACE.data && RACE.data.elapsedMs,
+      targets: RACE.data && RACE.data.targets || [10, 5, 3],
+      status: RACE.data && RACE.data.status
+    };
+    Object.assign(d, extra || {});
+    state.race = { key: 'auto-director', type: 'raceDirector', take: 1, data: d, label: 'Автоматический режиссёр' };
+    sendState();
+  }
+  function updateDirector(data, previous) {
+    if (!store.director.enabled || cfg.source !== 'raceApi') {
+      if (state.race) { state.race = null; sendState(); }
+      DIRECTOR.eventUntil = 0; return;
+    }
+    var order = raceOrder(data), players = racePlayers(data), leader = players[order[0]];
+    if (!leader || data.status === 'ready') {
+      if (state.race) { state.race = null; sendState(); }
+      DIRECTOR.eventUntil = 0; return;
+    }
+    if (data.status === 'finished') {
+      setDirectorLayer('winner', leader);
+      DIRECTOR.eventUntil = 0; return;
+    }
+    if (data.status === 'running' && previous && previous.status === 'running') {
+      var change = findPositionChange(previous, data);
+      if (change) {
+        setDirectorLayer(change.isLeader ? 'newLeader' : 'position', change.player, {
+          from: change.from, to: change.to, leaderName: leader.name || ''
+        });
+        DIRECTOR.eventUntil = Date.now() + Math.max(2, Math.min(15, +store.director.changeSeconds || 5)) * 1000;
+        return;
+      }
+    }
+    if (state.race && state.race.data && state.race.data.mode === 'position' || state.race && state.race.data && state.race.data.mode === 'newLeader') {
+      if (Date.now() < DIRECTOR.eventUntil) return;
+    }
+    setDirectorLayer('leader', leader, { paused: data.status === 'paused' });
+    DIRECTOR.eventUntil = 0;
+  }
+  function directorTick() {
+    if (!store.director.enabled || cfg.source !== 'raceApi' || !RACE.data) return;
+    var mode = state.race && state.race.data && state.race.data.mode;
+    if ((mode === 'position' || mode === 'newLeader') && Date.now() >= DIRECTOR.eventUntil) {
+      var order = raceOrder(RACE.data), p = racePlayers(RACE.data)[order[0]];
+      if (RACE.data.status === 'finished') setDirectorLayer('winner', p);
+      else if (p) setDirectorLayer('leader', p, { paused: RACE.data.status === 'paused' });
+    }
+  }
+  function setDirectorEnabled(enabled) {
+    store.director.enabled = !!enabled; save();
+    if (store.director.enabled && RACE.data) updateDirector(RACE.data, null);
+    else if (state.race) { state.race = null; sendState(); }
+    renderDirectorStatus();
+  }
+  function renderDirectorStatus() {
+    var b = $('#btnDirector');
+    if (!b) return;
+    var active = !!store.director.enabled && cfg.source === 'raceApi';
+    b.textContent = active ? 'АВТОРЕЖИССЁР: ВКЛ' : 'АВТОРЕЖИССЁР: ВЫКЛ';
+    b.className = active ? 'btn take' : 'btn';
+    b.title = active ? 'Автоматический показ лидера и смены позиций включён' : 'Нажмите, чтобы включить автоматического режиссёра';
+    b.disabled = cfg.source !== 'raceApi';
   }
 
   function hashStr(s) { var h = 0, i; for (i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h; }
@@ -186,6 +298,7 @@
     if (cfg.source === 'raceApi') {
       var raceIv = Math.max(500, Math.min(10000, +cfg.racePollMs || 1000));
       if (!RACE.busy && Date.now() - RACE.last >= raceIv) loadRace(false);
+      directorTick();
       return;
     }
     var now = Date.now(), hot = hotSheets();
@@ -390,7 +503,7 @@
   /* =================================================================== */
   /* Состояние эфира                                                     */
   /* =================================================================== */
-  var state = { center: null, bottom: null, corner: null };
+  var state = { center: null, bottom: null, corner: null, race: null };
   var takeN = 1;
   var bus = null, sendTimer = null;
 
@@ -407,7 +520,7 @@
   function sendState() {
     clearTimeout(sendTimer);
     sendTimer = setTimeout(function () {
-      if (bus) bus.send({ rev: Date.now(), ver: CG.VERSION, center: state.center, bottom: state.bottom, corner: state.corner });
+      if (bus) bus.send({ rev: Date.now(), ver: CG.VERSION, center: state.center, bottom: state.bottom, corner: state.corner, race: state.race });
     }, 30);
     renderOnAir();
   }
@@ -458,7 +571,7 @@
     var item = itemById(store.selected);
     $('#pvwName').textContent = item ? itemLabel(item) : '—';
     if (!pvwReady || !pvwFrame.contentWindow || !pvwFrame.contentWindow.__cgApply) return;
-    var st = { center: null, bottom: null, corner: null };
+    var st = { center: null, bottom: null, corner: null, race: state.race };
     if (item) {
       var d = payloadFor(item);
       if (d) {
@@ -473,6 +586,7 @@
   /* Рендер: статус                                                      */
   /* =================================================================== */
   function renderStatus() {
+    renderDirectorStatus();
     if (cfg.source === 'raceApi') {
       var rp = $('#pData');
       if (RACE.err) { rp.className = 'pill bad'; rp.textContent = 'ДАННЫЕ: API · ОШИБКА'; rp.title = RACE.err; }
@@ -977,10 +1091,13 @@
   };
 
   var modal = $('#settings');
+  $('#btnDirector').onclick = function () { setDirectorEnabled(!store.director.enabled); };
   $('#btnSettings').onclick = function () {
     $('#sSheetId').value = cfg.sheetId;
     $('#sRaceApiUrl').value = cfg.raceApiUrl || CG.DEFAULT_CONFIG.raceApiUrl;
     $('#sRacePollMs').value = cfg.racePollMs || 1000;
+    $('#sDirectorEnabled').checked = !!store.director.enabled;
+    $('#sDirectorDuration').value = store.director.changeSeconds || 5;
     $('#sPollA').value = cfg.pollActive; $('#sPollB').value = cfg.pollAll;
     $('#sTransport').value = cfg.transport; $('#sFbUrl').value = cfg.fbUrl || ''; $('#sRoom').value = cfg.room || '';
     $('#sVmixUrl').value = graphicsUrl();
@@ -997,6 +1114,8 @@
     cfg.raceApiUrl = $('#sRaceApiUrl').value.trim() || CG.DEFAULT_CONFIG.raceApiUrl;
     if (!/^https?:\/\//i.test(cfg.raceApiUrl)) { toast('Укажите корректный URL API', true); return; }
     cfg.racePollMs = Math.max(500, Math.min(10000, +$('#sRacePollMs').value || 1000));
+    store.director.enabled = $('#sDirectorEnabled').checked;
+    store.director.changeSeconds = Math.max(2, Math.min(15, +$('#sDirectorDuration').value || 5));
     cfg.pollActive = Math.max(1, +$('#sPollA').value || 3);
     cfg.pollAll = Math.max(5, +$('#sPollB').value || 30);
     $$('[data-gid]').forEach(function (inp) { cfg.sheets[+inp.dataset.gid].gid = inp.value.replace(/\D/g, ''); });
@@ -1009,6 +1128,9 @@
     if (cfg.transport === 'firebase' && !cfg.fbUrl) { toast('Укажите адрес Firebase', true); return; }
     save(); modal.hidden = true;
     if (prevT !== cfg.transport + '|' + cfg.fbUrl + '|' + cfg.room) { setTimeout(function () { location.reload(); }, 300); return; }
+    if (cfg.source === 'raceApi' && RACE.data) updateDirector(RACE.data, null);
+    else if (state.race) { state.race = null; sendState(); }
+    renderDirectorStatus();
     reloadAll();
   };
   ['#sTransport', '#sFbUrl', '#sRoom'].forEach(function (id) {
@@ -1055,14 +1177,14 @@
     // принимаем только при первом подключении (пульт — источник истины)
     if (!bus._gotInitial) {
       bus._gotInitial = true;
-      state.center = st.center || null; state.bottom = st.bottom || null; state.corner = st.corner || null;
+      state.center = st.center || null; state.bottom = st.bottom || null; state.corner = st.corner || null; state.race = st.race || null;
       renderList(); renderOnAir(); setupFlip();
     }
   }, syncStatus, useFirebase() ? { fb: CG.normFbUrl(cfg.fbUrl), room: CG.normRoom(cfg.room) } : null);
   // монитор PROGRAM подключаем тем же способом, что и vMix
   $('#pgmFrame').src = (useFirebase() ? graphicsUrl() + '&' : 'index.html?') + 'checker=1';
 
-  renderList(); renderEditor(); renderOnAir();
+  renderList(); renderEditor(); renderOnAir(); renderDirectorStatus();
   reloadAll();
   setInterval(pollTick, 1000);
   setInterval(renderStatus, 5000);
