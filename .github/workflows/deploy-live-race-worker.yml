@@ -1,0 +1,70 @@
+name: Deploy live race Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/deploy-live-race-worker.yml]
+
+permissions:
+  contents: read
+
+concurrency: live-race-worker-production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Publish Cloudflare Worker
+        id: publish
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 487f8477433d407e35eff9f2339f3bc8
+          WORKER_NAME: drone-racing-cg-2026-live
+        run: |
+          set -euo pipefail
+          if [[ -z "$CLOUDFLARE_API_TOKEN" ]]; then
+            echo "::error::Repository secret CLOUDFLARE_API_TOKEN is missing."
+            exit 1
+          fi
+
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers"
+          cloudflare() {
+            local response
+            response=$(curl --silent --show-error --max-time 30 \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$@")
+            if ! jq -e '.success == true' >/dev/null <<< "$response"; then
+              jq -c '.errors' <<< "$response" >&2
+              return 1
+            fi
+            printf '%s\n' "$response"
+          }
+
+          subdomain=$(cloudflare "$api/subdomain" | jq -er '.result.subdomain | select(length > 0)')
+          cloudflare --request PUT "$api/scripts/$WORKER_NAME" \
+            --form 'metadata={"main_module":"live-race-worker.js","compatibility_date":"2026-11-21"};type=application/json' \
+            --form 'live-race-worker.js=@infra/live-race-worker.js;type=application/javascript+module' >/dev/null
+          cloudflare --request POST "$api/scripts/$WORKER_NAME/subdomain" \
+            --header 'Content-Type: application/json' \
+            --data '{"enabled":true,"previews_enabled":false}' >/dev/null
+
+          url="https://$WORKER_NAME.$subdomain.workers.dev/"
+          printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"
+          printf 'Worker URL: %s\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Worker URL: %s\n' "$url"
+
+      - name: Verify public JSON and CORS
+        env:
+          WORKER_URL: ${{ steps.publish.outputs.url }}
+        run: |
+          set -euo pipefail
+          headers=$(mktemp)
+          data=$(mktemp)
+          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 --max-time 15 \
+            --header 'Origin: https://kds1988.github.io' --dump-header "$headers" --output "$data" "$WORKER_URL"
+          tr -d '\r' < "$headers" | grep -ix 'access-control-allow-origin: https://kds1988.github.io'
+          jq -e 'select(.players | type == "array") | {revision, players: (.players | length)}' "$data"
