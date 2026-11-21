@@ -932,7 +932,7 @@
     var stamp = item.kind === 'race'
       ? (RACE.err ? '⚠ ' + RACE.err : RACE.at ? 'API · ' + new Date(RACE.at).toLocaleTimeString('ru-RU') : 'ожидание API…')
       : (d && d.err ? '⚠ ' + d.err : d && d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…');
-    var head = '<h3>' + (s ? esc(sheetGroupTitle(s)) + ' · ' : '') + esc(item.label) + ' <small>' + esc(stamp) + '</small></h3>;
+    var head = '<h3>' + (s ? esc(sheetGroupTitle(s)) + ' · ' : '') + esc(item.label) + ' <small>' + esc(stamp) + '</small></h3>';
     if (!raw) { ed.innerHTML = head + '<div class="hint">Данные листа ещё не загружены или блок не найден в таблице.</div>'; return; }
     var pl = tablePayload(item);
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
