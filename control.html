@@ -8,7 +8,7 @@
 <script src="js/auth.js?v=20261119a"></script>
 <script>CGAuth.guard();</script>
 <link rel="stylesheet" href="css/fonts.css?v=20261117a">
-<link rel="stylesheet" href="css/control.css?v=20261121b">
+<link rel="stylesheet" href="css/control.css?v=20261121d">
 </head>
 <body>
 <header class="top">
@@ -29,6 +29,7 @@
     </select>
     <label class="btn" id="btnFile" hidden title="Выгрузка судейской таблицы: Файл → Скачать → Microsoft Excel (.xlsx)">📂 Загрузить .xlsx<input type="file" id="xlsxIn" accept=".xlsx,.xls,.ods" hidden></label>
     <button class="btn" id="btnReload" title="Перечитать таблицу сейчас">⟳ Обновить</button>
+    <button class="btn take" id="btnDirector" title="Автоматический показ лидера и смены позиций">АВТОРЕЖИССЁР: ВКЛ</button>
     <button class="btn" id="btnSettings">⚙ Настройки</button>
     <button class="btn logout" id="btnLogout" title="Выйти из пульта">Выйти</button>
     <button class="btn danger big" id="btnClear">СНЯТЬ ВСЁ</button>
@@ -88,6 +89,10 @@
       <label>Частота обновления, мс<input id="sRacePollMs" type="number" min="500" max="10000" step="250"></label>
     </div>
     <p class="hint">Для работы без CORS используйте локальный server.js: он проксирует запрос к sf.fgdrrace.ru. По умолчанию обновление каждую секунду.</p>
+    <h3>Автоматический режиссёр</h3>
+    <label class="chk"><input type="checkbox" id="sDirectorEnabled" checked> Автоматически показывать лидера, смену позиций и победителя</label>
+    <label>Длительность сообщения о смене позиции, секунд<input id="sDirectorDuration" type="number" min="2" max="15" step="1" value="5"></label>
+    <p class="hint">Плашка лидера остаётся на экране во время гонки. При реальном изменении мест появляется короткое сообщение, затем возвращается лидер. После общего финиша показывается победитель. Равные показатели не вызывают ложный обгон.</p>
     <h3>Google-таблица</h3>
     <p class="hint">Таблица должна быть открыта по ссылке («Все, у кого есть ссылка — читатель»). gid — число после <code>#gid=</code> в адресе листа.</p>
     <h3>Резервная копия настроек пульта</h3>
@@ -101,8 +106,8 @@
   </div>
 </div>
 
-<script src="js/core.js?v=20261121c"></script>
-<script src="js/race.js?v=20261121c"></script>
-<script src="js/control.js?v=20261121c"></script>
+<script src="js/core.js?v=20261121d"></script>
+<script src="js/race.js?v=20261121d"></script>
+<script src="js/control.js?v=20261121d"></script>
 </body>
 </html>
