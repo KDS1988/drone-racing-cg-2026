@@ -323,6 +323,7 @@
   }
   function pilotsIn(b) { return b.rows.filter(function (r) { return r.pilotsRaw.length; }).length; }
   /* Live JSON гонки: отдельный источник, не смешивается с протоколами FGDR. */
+  var LIVE_WORKER_URL = 'https://drone-racing-cg-2026-live.dmitry-korneev88.workers.dev/';
   var LIVE_TYPES=[['all','Общий прогресс'],['sim','Технический симулятор'],['basket','Дрон-баскетбол'],['race','Гонка 75 мм'],['results','Итоговые результаты'],['side','Боковой виджет']];
   var liveJson=null,liveError='',liveAt=0,liveLoadId=0,liveBusy=false;
   function liveFmt(v){if(v==null||!isFinite(+v))return '—';v=Math.max(0,+v);return Math.floor(v/60000)+':'+String(Math.floor(v%60000/1000)).padStart(2,'0')+'.'+String(Math.floor(v%1000)).padStart(3,'0')}
@@ -360,7 +361,8 @@
     var id = ++liveLoadId;
     var proxy = (localStorage.getItem('cg-race-proxy-url') || '').trim();
     var sources = [];
-    if (proxy) sources.push({ url: proxy, label: 'HTTPS-прокси' });
+    if (proxy && proxy !== LIVE_WORKER_URL) sources.push({ url: proxy, label: 'HTTPS-прокси' });
+    sources.push({ url: LIVE_WORKER_URL, label: 'Cloudflare Worker' });
     sources.push({ url: 'https://sf.fgdrrace.ru/api', label: 'Прямой API' });
     if (!/github[.]io$/i.test(location.hostname)) sources.push({ url: '../api/race', label: 'Локальный прокси' });
 
@@ -1260,7 +1262,10 @@
   // Live JSON must start even when a separate legacy data source fails to initialize.
   var proxyInput=document.getElementById('raceProxyUrl');
   var proxySave=document.getElementById('raceProxySave');
-  if(proxyInput)proxyInput.value=localStorage.getItem('cg-race-proxy-url')||'';
+  if (proxyInput) {
+    proxyInput.placeholder = LIVE_WORKER_URL;
+    proxyInput.value = localStorage.getItem('cg-race-proxy-url') || '';
+  }
   if(proxySave)proxySave.addEventListener('click',function(){
     var url=(proxyInput.value||'').trim();
     if(url && !/^https:\/\/[^\s]+$/i.test(url)){alert('Нужен полный HTTPS-адрес прокси');return;}
