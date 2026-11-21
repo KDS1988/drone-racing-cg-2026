@@ -102,6 +102,26 @@
 <script src="js/core.js?v=20261121b"></script>
 <script src="js/lowers-preset.js?v=20261121b"></script>
 <script src="js/fgdr.js?v=20261121b"></script>
-<script src="js/control.js?v=20261121livefix4"></script>
+<script src="js/control.js?v=20261121livefix5"></script>
+<script>
+(function(){
+  var pill=document.getElementById('liveJsonStatus');
+  if(!pill)return;
+  window.addEventListener('error',function(e){
+    if(pill.textContent.indexOf('загрузка')>=0||pill.textContent.indexOf('запрос')>=0){
+      pill.textContent='JSON: ОШИБКА JS';
+      pill.title=String(e.message||'Ошибка скрипта')+' · '+String(e.filename||'')+':'+String(e.lineno||'');
+      pill.className='pill bad';
+    }
+  });
+  setTimeout(function(){
+    if(/загрузка|запрос/.test(pill.textContent.toLowerCase())){
+      pill.textContent='JSON: ТАЙМАУТ';
+      pill.title='Пульт не завершил загрузку. Проверьте консоль браузера (F12).';
+      pill.className='pill bad';
+    }
+  },12000);
+})();
+</script>
 </body>
 </html>
