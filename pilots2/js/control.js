@@ -358,7 +358,7 @@
       // Номера соответствуют слотам старта (id 0–3), независимо от текущего рейтинга.
       pilots: Array.from({ length: 4 }, function (_, slot) {
         var pilot = players.get(String(slot));
-        return pilot ? { name: pilot.name || 'Пилот ' + (slot + 1), counts: pilot.counts || [] } : null;
+        return pilot ? { name: CG.formatName(pilot.name) || 'Пилот ' + (slot + 1), counts: pilot.counts || [] } : null;
       })
     };
   }
