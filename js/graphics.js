@@ -556,7 +556,7 @@
   RaceDirectorGfx.prototype.set = function (d, first) {
     d = d || {}; this.data = d;
     var p = d.player || {}, q = this.root.querySelector.bind(this.root);
-    var color = { red: '#f95357', yellow: '#ffd84d', green: '#39e26a', blue: '#3cb9f4' }[p.color] || '#3cb9f4';
+    var color = d.mode === 'winner' ? '#ffd84d' : ({ red: '#f95357', yellow: '#ffd84d', green: '#39e26a', blue: '#3cb9f4' }[p.color] || '#3cb9f4');
     this.root.style.setProperty('--rd-color', color);
     this.root.className = 'race-director mode-' + (d.mode || 'leader');
     q('.rd-kicker').textContent = d.mode === 'winner' ? 'ПОБЕДИТЕЛЬ ГОНКИ' : d.mode === 'newLeader' ? 'НОВЫЙ ЛИДЕР' : d.mode === 'position' ? 'СМЕНА ПОЗИЦИЙ' : (d.paused ? 'ЛИДЕР · ПАУЗА' : 'ЛИДЕР ГОНКИ');
