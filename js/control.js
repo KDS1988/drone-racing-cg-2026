@@ -562,14 +562,17 @@
     store.lowers.forEach(function (l, i) {
       var id = 'lower:' + i, air = isOnAir(id);
       html += '<div class="lt' + (air ? ' air' : '') + (store.selected === id ? ' sel' : '') + '" data-i="' + i + '">' +
-        '<input data-i="' + i + '" data-k="name" value="' + esc(l.name) + '" placeholder="Имя ФАМИЛИЯ">' +
+        '<span class="drag" draggable="true" data-drag="' + i + '" title="Перетащите, чтобы поменять порядок">⠿</span>' +
+        '<input data-i=""' + i + '" data-k="name" value="' + esc(l.name) + '" placeholder="Имя ФАМИЛИЯ">' +
         '<input data-i="' + i + '" data-k="role" value="' + esc(l.role) + '" placeholder="Должность">' +
+        '<button class="btn sm" data-mv="' + i + '" data-d="-1" title="Выше"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+        '<button class="btn sm" data-mv="' + i + '" data-d="1" title="Ниже"' + (i === store.lowers.length - 1 ? ' disabled' : '') + '>▼</button>' +
         '<button class="btn sm" data-pv="' + i + '">Превью</button>' +
         '<button class="btn sm ' + (air ? 'danger' : 'take') + '" data-tk="' + i + '">' + (air ? 'OUT' : 'IN') + '</button>' +
         '<button class="btn sm" data-del="' + i + '" title="Удалить">✕</button></div>';
     });
     html += '</div><div class="row"><button class="btn" id="ltAdd">+ Добавить подпись</button>' +
-      '<span class="hint">Порядок можно менять: ↑ в начале строки — Alt+↑/↓ в поле имени.</span></div>';
+      '<span class="hint">Порядок: кнопки ▲ ▼, перетаскивание за ⠿ или Alt+↑/↓ в поле имени. Порядок в списке слева меняется так же.</span></div>';
     ed.innerHTML = html;
     $$('.lt input', ed).forEach(function (inp) {
       inp.addEventListener('input', function () {
@@ -581,11 +584,33 @@
         if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
         var i = +inp.dataset.i, j = i + (e.key === 'ArrowUp' ? -1 : 1);
         if (j < 0 || j >= store.lowers.length) return;
-        var t = store.lowers[i]; store.lowers[i] = store.lowers[j]; store.lowers[j] = t;
-        remapLowerAir(i, j); save(); renderList(); renderEditor();
+        e.preventDefault(); moveLower(i, j);
         var el = $('.lt input[data-i="' + j + '"][data-k="' + inp.dataset.k + '"]'); if (el) el.focus();
       });
       inp.addEventListener('focus', function () { var id = 'lower:' + inp.dataset.i; if (store.selected !== id) { store.selected = id; save(); updatePreview(true); renderList(); $$('.lt', ed).forEach(function (r) { r.classList.toggle('sel', r.dataset.i === inp.dataset.i); }); renderOnAir(); } });
+    });
+    $$('[data-mv]', ed).forEach(function (b) { b.onclick = function () { var i = +b.dataset.mv; moveLower(i, i + (+b.dataset.d)); }; });
+    // перетаскивание строк за «⠿»
+    var dragFrom = null;
+    $$('[data-drag]', ed).forEach(function (h) {
+      h.addEventListener('dragstart', function (e) { dragFrom = +h.dataset.drag; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(dragFrom)); } catch (er) {} h.closest('.lt').classList.add('dragging'); });
+      h.addEventListener('dragend', function () { dragFrom = null; $$('.lt', ed).forEach(function (r) { r.classList.remove('dragging', 'dropup', 'dropdown'); }); });
+    });
+    $$('.lt', ed).forEach(function (row) {
+      row.addEventListener('dragover', function (e) {
+        if (dragFrom == null) return; e.preventDefault();
+        var r = row.getBoundingClientRect(), up = e.clientY < r.top + r.height / 2;
+        $$('.lt', ed).forEach(function (x) { if (x !== row) x.classList.remove('dropup', 'dropdown'); });
+        row.classList.toggle('dropup', up); row.classList.toggle('dropdown', !up);
+      });
+      row.addEventListener('drop', function (e) {
+        if (dragFrom == null) return; e.preventDefault();
+        var to = +row.dataset.i, r = row.getBoundingClientRect();
+        if (e.clientY >= r.top + r.height / 2) to++;
+        if (to > dragFrom) to--;
+        var from = dragFrom; dragFrom = null;
+        moveLower(from, to);
+      });
     });
     $$('[data-pv]', ed).forEach(function (b) { b.onclick = function () { store.selected = 'lower:' + b.dataset.pv; save(); renderList(); renderEditor(); updatePreview(true); }; });
     $$('[data-tk]', ed).forEach(function (b) { b.onclick = function () { toggle('lower:' + b.dataset.tk); renderEditor(); }; });
@@ -603,6 +628,17 @@
       var el = $('.lt:last-child input', ed); if (el) el.focus();
     };
     renderOnAir();
+  }
+  /** переставить подпись i на место j (эфир и выбор следуют за подписью) */
+  function moveLower(i, j) {
+    var n = store.lowers.length;
+    if (i === j || i < 0 || j < 0 || i >= n || j >= n) return;
+    var it = store.lowers.splice(i, 1)[0]; store.lowers.splice(j, 0, it);
+    var remap = function (k) { return k === i ? j : (i < k && k <= j) ? k - 1 : (j <= k && k < i) ? k + 1 : k; };
+    if (state.bottom && /^lower:/.test(state.bottom.key)) state.bottom.key = 'lower:' + remap(+state.bottom.key.split(':')[1]);
+    if (/^lower:/.test(store.selected || '')) store.selected = 'lower:' + remap(+store.selected.split(':')[1]);
+    save(); renderList(); renderEditor();
+    var el = document.querySelector('.lt[data-i="' + j + '"]'); if (el) { el.classList.add('moved'); el.scrollIntoView({ block: 'nearest' }); }
   }
   function remapLowerAir(i, j) {
     if (!state.bottom || !/^lower:/.test(state.bottom.key)) return;

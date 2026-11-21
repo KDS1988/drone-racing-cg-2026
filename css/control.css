@@ -97,7 +97,7 @@ table.data th.hidcol,table.data td.hidcol{opacity:.35}
 .wrapdata{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:8px}
 
 .lt-list{display:grid;gap:6px}
-.lt{display:grid;grid-template-columns:1fr 1.4fr auto auto auto;gap:6px;align-items:center;padding:6px;border-radius:8px;background:#0c1630;border:1px solid transparent}
+.lt{display:grid;grid-template-columns:auto 1fr 1.4fr auto auto auto auto auto;gap:6px;align-items:center;padding:6px;border-radius:8px;background:#0c1630;border:1px solid transparent}
 .lt.air{border-color:var(--red);background:#2a0e14}
 .lt.sel{outline:1px solid var(--blue)}
 
@@ -152,3 +152,12 @@ code{background:#0c1630;padding:1px 5px;border-radius:4px}
 .ptabs a:hover{color:var(--ink);border-color:var(--blue)}
 .ptabs a.on{background:var(--blue2);border-color:var(--blue);color:#fff}
 .top .pills{flex-wrap:nowrap;overflow:hidden}
+
+/* порядок подписей: ⠿ — перетаскивание, ▲▼ — по одной */
+.lt .drag{cursor:grab;user-select:none;font-size:18px;line-height:1;padding:4px 6px;color:var(--mute)}
+.lt .drag:active{cursor:grabbing}
+.lt.dragging{opacity:.45}
+.lt.dropup{box-shadow:inset 0 3px 0 var(--blue)}
+.lt.dropdown{box-shadow:inset 0 -3px 0 var(--blue)}
+.lt.moved{animation:ltmoved .9s ease-out}
+@keyframes ltmoved{0%{background:rgba(1,215,251,.35)}100%{}}
