@@ -91,6 +91,11 @@
       return r.json();
     });
   }
+  function raceFingerprint(j) {
+    // history может быть большим архивом и не влияет на live CG; сравниваем только текущий снимок.
+    return JSON.stringify({ revision: j.revision, status: j.status, elapsedMs: j.elapsedMs, targets: j.targets,
+      players: j.players, ranking: j.ranking, events: (j.events || []).slice(-12) });
+  }
   function loadRace(force) {
     if (RACE.busy) return Promise.resolve();
     RACE.busy = true; RACE.last = Date.now();
@@ -99,8 +104,10 @@
       throw e;
     }).then(function (j) {
       if (!j || !Array.isArray(j.players)) throw new Error('API вернул неожиданный JSON: нет массива players');
+      if (j.schemaVersion != null && j.schemaVersion !== 1) throw new Error('Неподдерживаемая версия API: ' + j.schemaVersion);
+      if (j.status && ['ready', 'running', 'paused', 'finished'].indexOf(j.status) < 0) throw new Error('Неизвестный статус гонки: ' + j.status);
       RACE.err = null; RACE.at = Date.now();
-      var hash = JSON.stringify(j);
+      var hash = raceFingerprint(j);
       if (force || hash !== RACE.hash) {
         var previous = RACE.data;
         RACE.hash = hash; RACE.data = j;
@@ -1085,6 +1092,8 @@
   };
   $('#srcSel').onchange = function () {
     cfg.source = this.value; save(); syncFileBtn();
+    if (cfg.source !== 'raceApi' && state.race) { state.race = null; sendState(); }
+    renderDirectorStatus();
     if (cfg.source === 'file' && !OFFLINE.fileName) setTimeout(function () { $('#xlsxIn').click(); }, 50);
     cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
     renderList(); renderEditor(); reloadAll();
