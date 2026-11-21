@@ -545,7 +545,48 @@
   };
   LogosGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
 
-  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx };
+
+  /* Автоматическая эфирная плашка лидера / смены позиций / победителя */
+  function RaceDirectorGfx(parent, item) {
+    this.root = h('div', 'race-director');
+    this.root.innerHTML = '<div class="rd-card"><div class="rd-mark"></div><div class="rd-main"><div class="rd-kicker"></div><div class="rd-name"></div><div class="rd-meta"></div></div><div class="rd-rank"></div></div>';
+    parent.appendChild(this.root);
+    this.set(item.data, true);
+  }
+  RaceDirectorGfx.prototype.set = function (d, first) {
+    d = d || {}; this.data = d;
+    var p = d.player || {}, q = this.root.querySelector.bind(this.root);
+    var color = d.mode === 'winner' ? '#ffd84d' : ({ red: '#f95357', yellow: '#ffd84d', green: '#39e26a', blue: '#3cb9f4' }[p.color] || '#3cb9f4');
+    this.root.style.setProperty('--rd-color', color);
+    this.root.className = 'race-director mode-' + (d.mode || 'leader');
+    q('.rd-kicker').textContent = d.mode === 'winner' ? 'ПОБЕДИТЕЛЬ ГОНКИ' : d.mode === 'newLeader' ? 'НОВЫЙ ЛИДЕР' : d.mode === 'position' ? 'СМЕНА ПОЗИЦИЙ' : (d.paused ? 'ЛИДЕР · ПАУЗА' : 'ЛИДЕР ГОНКИ');
+    q('.rd-name').textContent = p.name || 'Участник';
+    q('.rd-meta').textContent = d.mode === 'winner'
+      ? 'ФИНИШ · ' + (CG.RACE ? CG.RACE.fmt(p.finishMs) : '')
+      : (d.mode === 'position' || d.mode === 'newLeader')
+        ? (d.from + ' → ' + d.to + ' МЕСТО' + (d.leaderName && d.mode === 'position' ? ' · ЛИДЕР: ' + d.leaderName : ''))
+        : (['Симулятор', 'Баскетбол', 'Класс 75 мм'][p.stage] || (p.finished ? 'ФИНИШ' : 'ГОТОВ К СТАРТУ')) + ' · ' + (p.counts || []).join(' / ');
+    q('.rd-rank').textContent = d.mode === 'winner' ? '1' : (d.mode === 'position' || d.mode === 'newLeader' ? '↑' + d.to : '1');
+    q('.rd-mark').textContent = d.mode === 'winner' ? '★' : d.mode === 'newLeader' ? '↗' : d.mode === 'position' ? '⇧' : '1';
+    if (first) this.root.classList.add('rd-first');
+  };
+  RaceDirectorGfx.prototype.update = function (d) {
+    var oldMode = this.data && this.data.mode;
+    this.set(d, false);
+    if (oldMode !== d.mode) {
+      this.root.classList.remove('rd-change'); void this.root.offsetWidth; this.root.classList.add('rd-change');
+    }
+    return Promise.resolve();
+  };
+  RaceDirectorGfx.prototype.in = function () {
+    return anim(this.root, [{ opacity: 0, transform: 'translateX(90px) skewX(-4deg)' }, { opacity: 1, transform: 'none' }], { duration: 520, easing: EASE_IO });
+  };
+  RaceDirectorGfx.prototype.out = function () {
+    return anim(this.root, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(90px)' }], { duration: 300, easing: 'ease-in' });
+  };
+  RaceDirectorGfx.prototype.destroy = function () { this.root.remove(); };
+
+  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx, raceDirector: RaceDirectorGfx };
 
   /* =================================================================== */
   /* Слои: очередь анимаций, всегда применяется последнее состояние      */
@@ -598,7 +639,7 @@
     });
   };
 
-  var layers = { center: new Layer(document.getElementById('L-center')), bottom: new Layer(document.getElementById('L-bottom')), corner: new Layer(document.getElementById('L-corner')) };
+  var layers = { center: new Layer(document.getElementById('L-center')), bottom: new Layer(document.getElementById('L-bottom')), corner: new Layer(document.getElementById('L-corner')), race: new Layer(document.getElementById('L-race')) };
 
   // пульт обновлён, а графика в vMix открыта со старой версией — перезагружаемся один раз (минуя кэш GitHub Pages)
   function checkVersion(st) {
@@ -615,6 +656,7 @@
     layers.center.set(st.center || null);
     layers.bottom.set(st.bottom || null);
     layers.corner.set(st.corner || null);
+    layers.race.set(st.race || null);
     document.getElementById('stage').classList.toggle('corner-on', !!st.corner);
   }
 

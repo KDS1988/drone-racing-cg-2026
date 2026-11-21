@@ -45,6 +45,7 @@
   });
   if (!store.collapsed) store.collapsed = {};
   if (!store.logos || !Array.isArray(store.logos.items)) store.logos = { items: [], interval: 5, plate: 'white' };
+  store.director = Object.assign({ enabled: true, changeSeconds: 5 }, store.director || {});
   var saveTimer = null;
   function save() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }, 250); }
   var cfg = store.config;
@@ -65,6 +66,7 @@
   var DATA = {};  // key → { parsed, at, err, hash, busy, last }
   /** листы, которые показываются в пульте (включены в настройках; в демо — только те, для которых есть демо-файл) */
   function activeSheets() {
+    if (cfg.source === 'raceApi') return [];
     return cfg.sheets.filter(function (s) {
       if (s.on === false || !CG.sheetCsvUrl(cfg, s)) return false;
       if (cfg.source === 'file' && OFFLINE.fileName && offlineCsv(s) == null) return false; // листа нет в файле — не показываем
@@ -73,6 +75,154 @@
   }
   cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
   function sheetByKey(k) { return cfg.sheets.filter(function (s) { return s.key === k; })[0]; }
+
+  /* ---------- live API гонки: один JSON-снимок со всеми четырьмя пилотами ---------- */
+  var RACE = { data: null, at: 0, err: null, busy: false, last: 0, hash: '' };
+  var DIRECTOR = { eventUntil: 0 };
+  function raceChanged() {
+    renderList();
+    refreshOnAir();
+    updatePreview(false);
+    if (String(store.selected || '').indexOf('race:') === 0 && !$('#editor').contains(document.activeElement)) renderEditor();
+  }
+  function raceRequest(url) {
+    return fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+  function raceFingerprint(j) {
+    // history может быть большим архивом и не влияет на live CG; сравниваем только текущий снимок.
+    return JSON.stringify({ revision: j.revision, status: j.status, elapsedMs: j.elapsedMs, targets: j.targets,
+      players: j.players, ranking: j.ranking, events: (j.events || []).slice(-12) });
+  }
+  function loadRace(force) {
+    if (RACE.busy) return Promise.resolve();
+    RACE.busy = true; RACE.last = Date.now();
+    raceRequest(cfg.raceApiUrl || CG.DEFAULT_CONFIG.raceApiUrl).catch(function (e) {
+      if (bus && bus.mode === 'server') return raceRequest('api/race');
+      throw e;
+    }).then(function (j) {
+      if (!j || !Array.isArray(j.players)) throw new Error('API вернул неожиданный JSON: нет массива players');
+      if (j.schemaVersion != null && j.schemaVersion !== 1) throw new Error('Неподдерживаемая версия API: ' + j.schemaVersion);
+      if (j.status && ['ready', 'running', 'paused', 'finished'].indexOf(j.status) < 0) throw new Error('Неизвестный статус гонки: ' + j.status);
+      RACE.err = null; RACE.at = Date.now();
+      var hash = raceFingerprint(j);
+      if (force || hash !== RACE.hash) {
+        var previous = RACE.data;
+        RACE.hash = hash; RACE.data = j;
+        updateDirector(j, previous);
+        raceChanged();
+      }
+    }).catch(function (e) {
+      RACE.err = e && e.message ? e.message : String(e);
+    }).then(function () { RACE.busy = false; renderStatus(); });
+  }
+
+
+  /* ---------- автоматический режиссёр: лидер, обгоны, победитель ---------- */
+  function racePlayers(data) {
+    var map = {};
+    (data && data.players || []).forEach(function (p) { map[p.id] = p; });
+    return map;
+  }
+  function raceOrder(data) {
+    var map = racePlayers(data), ids = [];
+    (data && data.ranking || []).forEach(function (id) { if (map[id] && ids.indexOf(id) < 0) ids.push(id); });
+    (data && data.players || []).forEach(function (p) { if (ids.indexOf(p.id) < 0) ids.push(p.id); });
+    return ids;
+  }
+  function progressSignature(player) {
+    if (!player) return '';
+    if (player.finished && player.finishMs != null) return 'F:' + player.finishMs;
+    return [player.stage].concat(player.counts || []).join(':');
+  }
+  function findPositionChange(previous, current) {
+    if (!previous || !current) return null;
+    var oldOrder = raceOrder(previous), newOrder = raceOrder(current), oldPos = {};
+    oldOrder.forEach(function (id, i) { oldPos[id] = i; });
+    var nowPlayers = racePlayers(current);
+    for (var i = 0; i < newOrder.length; i++) {
+      var id = newOrder[i], from = oldPos[id];
+      if (from == null || from <= i) continue;
+      var p = nowPlayers[id], crossed = oldOrder.slice(i, from);
+      var meaningful = crossed.every(function (otherId) {
+        return progressSignature(p) !== progressSignature(nowPlayers[otherId]);
+      });
+      if (meaningful) return { player: p, from: from + 1, to: i + 1, isLeader: i === 0 };
+    }
+    return null;
+  }
+  function setDirectorLayer(mode, player, extra) {
+    if (!player) { state.race = null; sendState(); return; }
+    var d = {
+      mode: mode, player: {
+        id: player.id, name: player.name || 'Участник', color: player.color || 'blue',
+        stage: player.stage, finished: !!player.finished, counts: player.counts || [],
+        finishMs: player.finishMs, bestLapMs: player.bestLapMs
+      },
+      elapsedMs: RACE.data && RACE.data.elapsedMs,
+      targets: RACE.data && RACE.data.targets || [10, 5, 3],
+      status: RACE.data && RACE.data.status
+    };
+    Object.assign(d, extra || {});
+    state.race = { key: 'auto-director', type: 'raceDirector', take: 1, data: d, label: 'Автоматический режиссёр' };
+    sendState();
+  }
+  function updateDirector(data, previous) {
+    if (!store.director.enabled || cfg.source !== 'raceApi') {
+      if (state.race) { state.race = null; sendState(); }
+      DIRECTOR.eventUntil = 0; return;
+    }
+    var order = raceOrder(data), players = racePlayers(data), leader = players[order[0]];
+    if (!leader || data.status === 'ready') {
+      if (state.race) { state.race = null; sendState(); }
+      DIRECTOR.eventUntil = 0; return;
+    }
+    if (data.status === 'finished') {
+      setDirectorLayer('winner', leader);
+      DIRECTOR.eventUntil = 0; return;
+    }
+    if (data.status === 'running' && previous && previous.status === 'running') {
+      var change = findPositionChange(previous, data);
+      if (change) {
+        setDirectorLayer(change.isLeader ? 'newLeader' : 'position', change.player, {
+          from: change.from, to: change.to, leaderName: leader.name || ''
+        });
+        DIRECTOR.eventUntil = Date.now() + Math.max(2, Math.min(15, +store.director.changeSeconds || 5)) * 1000;
+        return;
+      }
+    }
+    if (state.race && state.race.data && (state.race.data.mode === 'position' || state.race.data.mode === 'newLeader')) {
+      if (Date.now() < DIRECTOR.eventUntil) return;
+    }
+    setDirectorLayer('leader', leader, { paused: data.status === 'paused' });
+    DIRECTOR.eventUntil = 0;
+  }
+  function directorTick() {
+    if (!store.director.enabled || cfg.source !== 'raceApi' || !RACE.data) return;
+    var mode = state.race && state.race.data && state.race.data.mode;
+    if ((mode === 'position' || mode === 'newLeader') && Date.now() >= DIRECTOR.eventUntil) {
+      var order = raceOrder(RACE.data), p = racePlayers(RACE.data)[order[0]];
+      if (RACE.data.status === 'finished') setDirectorLayer('winner', p);
+      else if (p) setDirectorLayer('leader', p, { paused: RACE.data.status === 'paused' });
+    }
+  }
+  function setDirectorEnabled(enabled) {
+    store.director.enabled = !!enabled; save();
+    if (store.director.enabled && RACE.data) updateDirector(RACE.data, null);
+    else if (state.race) { state.race = null; sendState(); }
+    renderDirectorStatus();
+  }
+  function renderDirectorStatus() {
+    var b = $('#btnDirector');
+    if (!b) return;
+    var active = !!store.director.enabled && cfg.source === 'raceApi';
+    b.textContent = active ? 'АВТОРЕЖИССЁР: ВКЛ' : 'АВТОРЕЖИССЁР: ВЫКЛ';
+    b.className = active ? 'btn take' : 'btn';
+    b.title = active ? 'Автоматический показ лидера и смены позиций включён' : 'Нажмите, чтобы включить автоматического режиссёра';
+    b.disabled = cfg.source !== 'raceApi';
+  }
 
   function hashStr(s) { var h = 0, i; for (i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h; }
 
@@ -152,6 +302,12 @@
     return hot;
   }
   function pollTick() {
+    if (cfg.source === 'raceApi') {
+      var raceIv = Math.max(500, Math.min(10000, +cfg.racePollMs || 1000));
+      if (!RACE.busy && Date.now() - RACE.last >= raceIv) loadRace(false);
+      directorTick();
+      return;
+    }
     var now = Date.now(), hot = hotSheets();
     activeSheets().forEach(function (s) {
       var d = DATA[s.key];
@@ -159,7 +315,10 @@
       if (!d.busy && now - d.last >= iv) loadSheet(s);
     });
   }
-  function reloadAll() { activeSheets().forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); }); }
+  function reloadAll() {
+    if (cfg.source === 'raceApi') { RACE.hash = ''; loadRace(true); return; }
+    activeSheets().forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); });
+  }
 
   /* =================================================================== */
   /* Каталог титров                                                      */
@@ -185,6 +344,7 @@
     store.lowers.forEach(function (l, i) {
       items.push({ id: 'lower:' + i, type: 'lower', layer: 'bottom', label: 'Подпись: ' + (l.name || '—'), group: 'lowers', idx: i });
     });
+    if (cfg.source === 'raceApi' && CG.RACE) items = items.concat(CG.RACE.catalog(RACE.data));
     activeSheets().forEach(function (s) {
       var p = DATA[s.key].parsed;
       if (!p) return;
@@ -228,6 +388,7 @@
 
   /** «сырой» вид таблицы: все колонки, все строки, значения из листа */
   function rawTable(item) {
+    if (item.kind === 'race' && CG.RACE) return CG.RACE.table(RACE.data, item.id);
     var s = sheetByKey(item.sheet), p = DATA[item.sheet] && DATA[item.sheet].parsed;
     if (!s || !p) return null;
     var known = p.known, team = p.mode === 'team';
@@ -289,7 +450,7 @@
   /** данные для графики (с правками, скрытием, сортировкой, страницами) */
   function tablePayload(item) {
     var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet);
-    if (!raw || !s) return null;
+    if (!raw || (!s && item.kind !== 'race')) return null;
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
     var pilotKey = (raw.columns.filter(function (c) { return c.role === 'pilot'; })[0] || {}).key;
     var placeKeys = raw.columns.filter(function (c) { return CG.low(c.label) === 'место'; }).map(function (c) { return c.key; });
@@ -329,8 +490,8 @@
       return { id: r.id, cells: cells, hl: r.hl || 0 };
     });
     return {
-      title: t.title != null && t.title !== '' ? t.title : (item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
-      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : sheetSubtitle(s),
+      title: t.title != null && t.title !== '' ? t.title : (item.kind === 'race' ? raw.title : (item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа'))),
+      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : (s ? sheetSubtitle(s) : (raw.subtitle || '')),
       team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages,
       pos: { h: t.posH || 'c', v: t.posV || 'c', scale: +t.scale || 100 }
     };
@@ -349,7 +510,7 @@
   /* =================================================================== */
   /* Состояние эфира                                                     */
   /* =================================================================== */
-  var state = { center: null, bottom: null, corner: null };
+  var state = { center: null, bottom: null, corner: null, race: null };
   var takeN = 1;
   var bus = null, sendTimer = null;
 
@@ -366,7 +527,7 @@
   function sendState() {
     clearTimeout(sendTimer);
     sendTimer = setTimeout(function () {
-      if (bus) bus.send({ rev: Date.now(), ver: CG.VERSION, center: state.center, bottom: state.bottom, corner: state.corner });
+      if (bus) bus.send({ rev: Date.now(), ver: CG.VERSION, center: state.center, bottom: state.bottom, corner: state.corner, race: state.race });
     }, 30);
     renderOnAir();
   }
@@ -417,7 +578,7 @@
     var item = itemById(store.selected);
     $('#pvwName').textContent = item ? itemLabel(item) : '—';
     if (!pvwReady || !pvwFrame.contentWindow || !pvwFrame.contentWindow.__cgApply) return;
-    var st = { center: null, bottom: null, corner: null };
+    var st = { center: null, bottom: null, corner: null, race: state.race };
     if (item) {
       var d = payloadFor(item);
       if (d) {
@@ -432,6 +593,15 @@
   /* Рендер: статус                                                      */
   /* =================================================================== */
   function renderStatus() {
+    renderDirectorStatus();
+    if (cfg.source === 'raceApi') {
+      var rp = $('#pData');
+      if (RACE.err) { rp.className = 'pill bad'; rp.textContent = 'ДАННЫЕ: API · ОШИБКА'; rp.title = RACE.err; }
+      else if (RACE.data) { rp.className = 'pill ok'; rp.textContent = 'ДАННЫЕ: API · ' + new Date(RACE.at).toLocaleTimeString('ru-RU'); rp.title = 'revision: ' + RACE.data.revision + ' · статус: ' + RACE.data.status; }
+      else { rp.className = 'pill warn'; rp.textContent = 'ДАННЫЕ: ОЖИДАНИЕ API…'; rp.title = cfg.raceApiUrl || ''; }
+      $('#pDemo').hidden = true;
+      return;
+    }
     var errs = [], newest = 0, loaded = 0;
     activeSheets().forEach(function (s) {
       var d = DATA[s.key];
@@ -468,9 +638,11 @@
   function renderList() {
     ITEMS = catalog();
     var html = '';
-    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(activeSheets().map(function (s) {
-      return { k: s.key, t: sheetGroupTitle(s), sheet: true };
-    }));
+    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(
+      cfg.source === 'raceApi' ? [{ k: 'race', t: 'Живая гонка' }] : activeSheets().map(function (s) {
+        return { k: s.key, t: sheetGroupTitle(s), sheet: true };
+      })
+    );
     groups.forEach(function (g) {
       var its = ITEMS.filter(function (i) { return i.group === g.k; });
       var collapsed = !!store.collapsed[g.k];
@@ -479,6 +651,7 @@
         esc(g.t) + (hasAir ? ' <b class="airdot">●</b>' : '') + (g.sheet ? '<span class="st" data-k="' + g.k + '">…</span>' : '') + '</h4>';
       if (collapsed) { html += '</div>'; return; }
       if (g.k === 'lowers' && !its.length) html += '<div class="hint">Добавьте подписи в редакторе</div>';
+      if (g.k === 'race' && !its.length) html += '<div class="hint">Загрузка данных гонки…</div>';
       if (g.sheet && !its.length) html += '<div class="hint">' + (DATA[g.k].parsed ? 'Пока нет заполненных таблиц' : 'загрузка…') + '</div>';
       its.forEach(function (it) {
         var air = isOnAir(it.id);
@@ -508,6 +681,7 @@
     renderList(); renderEditor(); updatePreview(true);
     var it = itemById(id);
     if (it && it.sheet) loadSheet(sheetByKey(it.sheet));
+    else if (it && it.kind === 'race') loadRace(false);
   }
 
   function renderOnAir() {
@@ -762,8 +936,10 @@
   function renderTableEditor(ed, item) {
     var s = sheetByKey(item.sheet), d = DATA[item.sheet], t = tcfg(item.id);
     var raw = rawTable(item);
-    var head = '<h3>' + esc(s ? sheetGroupTitle(s) : '') + ' · ' + esc(item.label) + ' <small>' +
-      (d.err ? '⚠ ' + esc(d.err) : d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…') + '</small></h3>';
+    var stamp = item.kind === 'race'
+      ? (RACE.err ? '⚠ ' + RACE.err : RACE.at ? 'API · ' + new Date(RACE.at).toLocaleTimeString('ru-RU') : 'ожидание API…')
+      : (d && d.err ? '⚠ ' + d.err : d && d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…');
+    var head = '<h3>' + (s ? esc(sheetGroupTitle(s)) + ' · ' : '') + esc(item.label) + ' <small>' + esc(stamp) + '</small></h3>';
     if (!raw) { ed.innerHTML = head + '<div class="hint">Данные листа ещё не загружены или блок не найден в таблице.</div>'; return; }
     var pl = tablePayload(item);
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
@@ -916,14 +1092,21 @@
   };
   $('#srcSel').onchange = function () {
     cfg.source = this.value; save(); syncFileBtn();
+    if (cfg.source !== 'raceApi' && state.race) { state.race = null; sendState(); }
+    renderDirectorStatus();
     if (cfg.source === 'file' && !OFFLINE.fileName) setTimeout(function () { $('#xlsxIn').click(); }, 50);
     cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
     renderList(); renderEditor(); reloadAll();
   };
 
   var modal = $('#settings');
+  $('#btnDirector').onclick = function () { setDirectorEnabled(!store.director.enabled); };
   $('#btnSettings').onclick = function () {
     $('#sSheetId').value = cfg.sheetId;
+    $('#sRaceApiUrl').value = cfg.raceApiUrl || CG.DEFAULT_CONFIG.raceApiUrl;
+    $('#sRacePollMs').value = cfg.racePollMs || 1000;
+    $('#sDirectorEnabled').checked = !!store.director.enabled;
+    $('#sDirectorDuration').value = store.director.changeSeconds || 5;
     $('#sPollA').value = cfg.pollActive; $('#sPollB').value = cfg.pollAll;
     $('#sTransport').value = cfg.transport; $('#sFbUrl').value = cfg.fbUrl || ''; $('#sRoom').value = cfg.room || '';
     $('#sVmixUrl').value = graphicsUrl();
@@ -937,6 +1120,11 @@
   $('#sSave').onclick = function () {
     var m = /\/d\/([\w-]+)/.exec($('#sSheetId').value); // можно вставить всю ссылку
     cfg.sheetId = m ? m[1] : $('#sSheetId').value.trim();
+    cfg.raceApiUrl = $('#sRaceApiUrl').value.trim() || CG.DEFAULT_CONFIG.raceApiUrl;
+    if (!/^https?:\/\//i.test(cfg.raceApiUrl)) { toast('Укажите корректный URL API', true); return; }
+    cfg.racePollMs = Math.max(500, Math.min(10000, +$('#sRacePollMs').value || 1000));
+    store.director.enabled = $('#sDirectorEnabled').checked;
+    store.director.changeSeconds = Math.max(2, Math.min(15, +$('#sDirectorDuration').value || 5));
     cfg.pollActive = Math.max(1, +$('#sPollA').value || 3);
     cfg.pollAll = Math.max(5, +$('#sPollB').value || 30);
     $$('[data-gid]').forEach(function (inp) { cfg.sheets[+inp.dataset.gid].gid = inp.value.replace(/\D/g, ''); });
@@ -949,6 +1137,9 @@
     if (cfg.transport === 'firebase' && !cfg.fbUrl) { toast('Укажите адрес Firebase', true); return; }
     save(); modal.hidden = true;
     if (prevT !== cfg.transport + '|' + cfg.fbUrl + '|' + cfg.room) { setTimeout(function () { location.reload(); }, 300); return; }
+    if (cfg.source === 'raceApi' && RACE.data) updateDirector(RACE.data, null);
+    else if (state.race) { state.race = null; sendState(); }
+    renderDirectorStatus();
     reloadAll();
   };
   ['#sTransport', '#sFbUrl', '#sRoom'].forEach(function (id) {
@@ -995,14 +1186,14 @@
     // принимаем только при первом подключении (пульт — источник истины)
     if (!bus._gotInitial) {
       bus._gotInitial = true;
-      state.center = st.center || null; state.bottom = st.bottom || null; state.corner = st.corner || null;
+      state.center = st.center || null; state.bottom = st.bottom || null; state.corner = st.corner || null; state.race = st.race || null;
       renderList(); renderOnAir(); setupFlip();
     }
   }, syncStatus, useFirebase() ? { fb: CG.normFbUrl(cfg.fbUrl), room: CG.normRoom(cfg.room) } : null);
   // монитор PROGRAM подключаем тем же способом, что и vMix
   $('#pgmFrame').src = (useFirebase() ? graphicsUrl() + '&' : 'index.html?') + 'checker=1';
 
-  renderList(); renderEditor(); renderOnAir();
+  renderList(); renderEditor(); renderOnAir(); renderDirectorStatus();
   reloadAll();
   setInterval(pollTick, 1000);
   setInterval(renderStatus, 5000);

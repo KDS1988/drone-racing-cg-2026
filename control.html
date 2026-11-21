@@ -8,13 +8,13 @@
 <script src="js/auth.js?v=20261119a"></script>
 <script>CGAuth.guard();</script>
 <link rel="stylesheet" href="css/fonts.css?v=20261117a">
-<link rel="stylesheet" href="css/control.css?v=20261121b">
+<link rel="stylesheet" href="css/control.css?v=20261121d">
 </head>
 <body>
 <header class="top">
   <img class="tlogo" src="assets/logo.png?v=chr26" alt="">
   <div class="ttl">ПУЛЬТ CG<small>Гонки дронов · Чемпионат России 2026</small></div>
-  <nav class="ptabs"><a class="on" href="control.html">Гонки дронов</a><a href="pilots/control.html">Пилоты Будущего</a></nav>
+  <nav class="ptabs"><a class="on" href="control.html">Гонки дронов</a><a href="pilots/control.html">Пилоты Будущего</a><a href="pilots2/control.html">Пилоты Будущего 2</a></nav>
   <div class="pills">
     <span class="pill" id="pSync" title="Связь с графикой">СВЯЗЬ: …</span>
     <span class="pill" id="pData" title="Данные таблицы">ДАННЫЕ: …</span>
@@ -23,11 +23,13 @@
   <div class="tact">
     <select id="srcSel" title="Источник данных">
       <option value="google">Google Таблица</option>
+      <option value="raceApi">Live API гонки (FGDR)</option>
       <option value="file">Файл Excel (без интернета)</option>
       <option value="demo">Демо-данные (репетиция)</option>
     </select>
     <label class="btn" id="btnFile" hidden title="Выгрузка судейской таблицы: Файл → Скачать → Microsoft Excel (.xlsx)">📂 Загрузить .xlsx<input type="file" id="xlsxIn" accept=".xlsx,.xls,.ods" hidden></label>
     <button class="btn" id="btnReload" title="Перечитать таблицу сейчас">⟳ Обновить</button>
+    <button class="btn take" id="btnDirector" title="Автоматический показ лидера и смены позиций">АВТОРЕЖИССЁР: ВКЛ</button>
     <button class="btn" id="btnSettings">⚙ Настройки</button>
     <button class="btn logout" id="btnLogout" title="Выйти из пульта">Выйти</button>
     <button class="btn danger big" id="btnClear">СНЯТЬ ВСЁ</button>
@@ -81,6 +83,16 @@
     <label>Ссылка для vMix (Web Browser input, 1920×1080)
       <div class="row" style="margin:0"><input id="sVmixUrl" readonly style="flex:1"><button class="btn" id="sCopy" type="button">Копировать</button></div></label>
     <p class="hint">В облачном режиме пульт и графику можно открывать с GitHub Pages с любых компьютеров с интернетом. Ключ комнаты — секрет: без него к титрам не подключиться.</p>
+    <h3>Live API гонки дронов</h3>
+    <div class="grid2">
+      <label>Адрес JSON API<input id="sRaceApiUrl" spellcheck="false" value="https://sf.fgdrrace.ru/api"></label>
+      <label>Частота обновления, мс<input id="sRacePollMs" type="number" min="500" max="10000" step="250"></label>
+    </div>
+    <p class="hint">Для работы без CORS используйте локальный server.js: он проксирует запрос к sf.fgdrrace.ru. По умолчанию обновление каждую секунду.</p>
+    <h3>Автоматический режиссёр</h3>
+    <label class="chk"><input type="checkbox" id="sDirectorEnabled" checked> Автоматически показывать лидера, смену позиций и победителя</label>
+    <label>Длительность сообщения о смене позиции, секунд<input id="sDirectorDuration" type="number" min="2" max="15" step="1" value="5"></label>
+    <p class="hint">Плашка лидера остаётся на экране во время гонки. При реальном изменении мест появляется короткое сообщение, затем возвращается лидер. После общего финиша показывается победитель. Равные показатели не вызывают ложный обгон.</p>
     <h3>Google-таблица</h3>
     <p class="hint">Таблица должна быть открыта по ссылке («Все, у кого есть ссылка — читатель»). gid — число после <code>#gid=</code> в адресе листа.</p>
     <h3>Резервная копия настроек пульта</h3>
@@ -94,7 +106,8 @@
   </div>
 </div>
 
-<script src="js/core.js?v=20261117a"></script>
-<script src="js/control.js?v=20261121b"></script>
+<script src="js/core.js?v=20261121d"></script>
+<script src="js/race.js?v=20261121d"></script>
+<script src="js/control.js?v=20261121d"></script>
 </body>
 </html>

@@ -15,7 +15,9 @@
   var DEFAULT_CONFIG = {
     sheetId: '1XR4bUiHKdA0MMtmi-vHocZyL1uXBP6Ou66xEmqDhw2A',   // «Чемпионат России 2026»
     fbUrl: 'https://kds88-title-default-rtdb.europe-west1.firebasedatabase.app', // облачная синхронизация (Firebase RTDB)
-    source: 'google',          // 'google' | 'demo'
+    source: 'google',          // 'google' | 'demo' | 'file' | 'raceApi'
+    raceApiUrl: 'https://sf.fgdrrace.ru/api',
+    racePollMs: 1000,          // частота опроса live API
     pollActive: 3,             // сек — опрос листа, который в эфире / в редакторе
     pollAll: 30,               // сек — фоновый опрос остальных листов
     eventTitle: 'Первенство России',
@@ -517,7 +519,7 @@
   };
 
   return {
-    VERSION: '20261117a',   // меняется при каждом выпуске (и в ?v= в html) — графика сама перезагрузится, если пульт новее
+    VERSION: '20261121d',   // меняется при каждом выпуске (и в ?v= в html) — графика сама перезагрузится, если пульт новее
     DEFAULT_CONFIG: DEFAULT_CONFIG, SHEET_CATALOG: SHEET_CATALOG, sheetFromName: sheetFromName,
     sheetCsvUrl: sheetCsvUrl,
     parseCSV: parseCSV,
