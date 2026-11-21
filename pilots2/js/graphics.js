@@ -652,7 +652,74 @@
   };
   PCardGfx.prototype.destroy = function () { this.root.remove(); };
 
-  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx, pcard: PCardGfx };
+  var RACE_STAGE_NAMES = ['Симулятор', 'Баскетбол', 'Гонка'];
+
+  function RaceHeaderGfx(parent, item) {
+    this.root = h('div', 'race-header',
+      '<div class="race-header-banner"><img src="assets/logo-white-wide.png" alt="Пилоты Будущего">' +
+      '<span class="race-header-clock" aria-label="Время гонки"></span></div><div class="race-header-cards"></div>');
+    this.clockEl = this.root.querySelector('.race-header-clock');
+    var list = this.root.querySelector('.race-header-cards');
+    this.cards = Array.from({ length: 4 }, function (_, slot) {
+      var card = h('div', 'race-header-card',
+        '<div class="race-header-pilot"><span class="race-header-number">' + (slot + 1) +
+        '</span><span class="race-header-name"></span></div><div class="race-header-metrics"></div>');
+      var metrics = card.querySelector('.race-header-metrics');
+      var stages = RACE_STAGE_NAMES.map(function (name) {
+        var metric = h('div', 'race-header-metric',
+          '<div class="race-header-stage">' + name + '</div><b></b><div class="race-header-track"><span></span></div>');
+        metrics.appendChild(metric);
+        return { value: metric.querySelector('b'), fill: metric.querySelector('.race-header-track span') };
+      });
+      list.appendChild(card);
+      return { name: card.querySelector('.race-header-name'), stages: stages };
+    });
+    parent.appendChild(this.root);
+    this.update(item.data);
+    var self = this;
+    this.timer = setInterval(function () { self.updateClock(); }, 250);
+  }
+
+  RaceHeaderGfx.prototype.updateClock = function () {
+    var clock = this.clock || {};
+    var ms = Number.isFinite(clock.startedAt) ? Date.now() - clock.startedAt : clock.elapsedMs;
+    var seconds = Math.max(0, Math.floor(ms / 1000));
+    var text = Number.isFinite(ms)
+      ? String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0')
+      : '—:—';
+    if (this.clockEl.textContent !== text) this.clockEl.textContent = text;
+  };
+
+  RaceHeaderGfx.prototype.update = function (data) {
+    this.clock = data.clock;
+    this.updateClock();
+    this.cards.forEach(function (card, slot) {
+      var pilot = (data.pilots || [])[slot];
+      var name = pilot ? pilot.name : '—';
+      if (card.name.textContent !== name) {
+        card.name.textContent = name;
+        fontsReady.then(function () { fit(card.name, 0.58); });
+      }
+      card.stages.forEach(function (stage, index) {
+        var target = (data.targets || [])[index];
+        var count = pilot ? (pilot.counts || [])[index] ?? 0 : null;
+        stage.value.textContent = (count ?? '—') + ' / ' + (target ?? '—');
+        var progress = target > 0 ? Math.max(0, Math.min(1, count / target)) : 0;
+        stage.fill.style.transform = 'scaleX(' + progress + ')';
+      });
+    });
+    return Promise.resolve();
+  };
+
+  RaceHeaderGfx.prototype.in = function () {
+    return anim(this.root, [{ transform: 'translateY(-28px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420 });
+  };
+  RaceHeaderGfx.prototype.out = function () {
+    return anim(this.root, [{ transform: 'none', opacity: 1 }, { transform: 'translateY(-20px)', opacity: 0 }], { duration: 260 });
+  };
+  RaceHeaderGfx.prototype.destroy = function () { clearInterval(this.timer); this.root.remove(); };
+
+  var TYPES = { start: StartGfx, geo: GeoGfx, lower: LowerGfx, table: TableGfx, logos: LogosGfx, pcard: PCardGfx, raceHeader: RaceHeaderGfx };
 
   /* =================================================================== */
   /* Слои: очередь анимаций, всегда применяется последнее состояние      */

@@ -324,7 +324,7 @@
   function pilotsIn(b) { return b.rows.filter(function (r) { return r.pilotsRaw.length; }).length; }
   /* Live JSON гонки: отдельный источник, не смешивается с протоколами FGDR. */
   var LIVE_WORKER_URL = 'https://drone-racing-cg-2026-live.dmitry-korneev88.workers.dev/';
-  var LIVE_TYPES=[['all','Общий прогресс'],['sim','Технический симулятор'],['basket','Дрон-баскетбол'],['race','Гонка 75 мм'],['results','Итоговые результаты'],['side','Боковой виджет']];
+  var LIVE_TYPES=[['all','Общий прогресс'],['sim','Технический симулятор'],['basket','Дрон-баскетбол'],['race','Гонка 75 мм'],['results','Итоговые результаты'],['side','Верхний титр · Пилоты 1–4']];
   var liveJson=null,liveError='',liveAt=0,liveLoadId=0,liveBusy=false;
   function liveFmt(v){if(v==null||!isFinite(+v))return '—';v=Math.max(0,+v);return Math.floor(v/60000)+':'+String(Math.floor(v%60000/1000)).padStart(2,'0')+'.'+String(Math.floor(v%1000)).padStart(3,'0')}
   function liveTable(item){
@@ -332,26 +332,45 @@
     var lookup={};d.players.forEach(function(p){lookup[String(p.id)]=p});
     var players=(Array.isArray(d.ranking)?d.ranking.map(function(id){return lookup[String(id && typeof id==='object'?id.id:id)]}).filter(Boolean):[]);
     d.players.forEach(function(p){if(players.indexOf(p)<0)players.push(p)});
-    var type=item.liveType,all=type==='all'||type==='results',side=type==='side',idx=type==='sim'?0:type==='basket'?1:2;
+    var type=item.liveType,all=type==='all'||type==='results',idx=type==='sim'?0:type==='basket'?1:2;
     var cols=[{key:'place',label:'№',role:'idx'},{key:'pilot',label:'Участник',role:'pilot'}];
     if(all){['Симулятор','Баскетбол','75 мм'].forEach(function(n,i){cols.push({key:'s'+i,label:n,role:'result'})});cols.push({key:'finish',label:'Финиш',role:'time'})}
-    else cols.push({key:'result',label:side?'Этап':'Результат',role:'result'});
-    var rows=players.slice(0,side?8:16).map(function(p,i){
+    else cols.push({key:'result',label:'Результат',role:'result'});
+    var rows=players.slice(0,16).map(function(p,i){
       var cells={place:String(i+1),pilot:p.name||('Участник '+p.id)};
       if(all){for(var j=0;j<3;j++)cells['s'+j]=String((p.counts||[])[j]??0)+'/'+String((d.targets||[])[j]??'—');cells.finish=liveFmt(p.finishMs)}
-      else if(side)cells.result=p.finished?'ФИНИШ':(['Симулятор','Баскетбол','75 мм'][p.stage]||'Ожидание');
       else cells.result=String((p.counts||[])[idx]??0)+'/'+String((d.targets||[])[idx]??'—')+' · '+liveFmt((p.durationsMs||[])[idx]);
       return {id:String(p.id),cells:cells,hl:i<3?i+1:0};
     });
-    return {title:item.label,subtitle:'ПИЛОТЫ БУДУЩЕГО · LIVE API',columns:cols,rows:rows,defaultHidden:{},page:0,pages:1,pos:{h:side?'l':'c',v:'c',scale:side?55:100}};
+    return {title:item.label,subtitle:'ПИЛОТЫ БУДУЩЕГО · LIVE API',columns:cols,rows:rows,defaultHidden:{},page:0,pages:1};
   }
+  function raceHeaderPayload() {
+    if (!liveJson) return null;
+    var players = new Map(liveJson.players.map(function (p) { return [String(p.id), p]; }));
+    var elapsed = Number.isFinite(liveJson.elapsedMs) ? Math.max(0, liveJson.elapsedMs) : null;
+    var running = liveJson.status === 'running' && elapsed != null;
+    var clock = running
+      ? { startedAt: (Number.isFinite(liveJson.serverTime) ? liveJson.serverTime : liveAt) - elapsed }
+      : { elapsedMs: elapsed };
+    return {
+      clock: clock,
+      targets: liveJson.targets || [],
+      // Номера соответствуют слотам старта (id 0–3), независимо от текущего рейтинга.
+      pilots: Array.from({ length: 4 }, function (_, slot) {
+        var pilot = players.get(String(slot));
+        return pilot ? { name: pilot.name || 'Пилот ' + (slot + 1), counts: pilot.counts || [] } : null;
+      })
+    };
+  }
+
   function liveAccept(d) {
     if (!Array.isArray(d.ranking)) d.ranking = d.players.map(function (p) { return p.id; });
     var first = !liveJson, changed = first || d.revision == null || d.revision !== liveJson.revision;
     liveJson = d;
     liveAt = Date.now();
-    if (changed) { refreshOnAir(); updatePreview(false); }
     var selected = itemById(store.selected);
+    if (changed || (state.center && state.center.key === 'live:side')) refreshOnAir();
+    if (changed || (selected && selected.type === 'raceHeader')) updatePreview(false);
     if (first && selected && selected.kind === 'live') renderEditor();
   }
 
@@ -409,7 +428,7 @@
       { id: 'geo', type: 'geo', layer: 'bottom', label: 'Геотитр', group: 'common' },
       { id: 'logos', type: 'logos', layer: 'corner', label: 'Карусель логотипов', group: 'common', count: (store.logos.items || []).length }
     ];
-    LIVE_TYPES.forEach(function(v){items.push({id:'live:'+v[0],type:'table',kind:'live',liveType:v[0],layer:'center',label:v[1],group:'live-json'})});
+    LIVE_TYPES.forEach(function(v){items.push({id:'live:'+v[0],type:v[0]==='side'?'raceHeader':'table',kind:'live',liveType:v[0],layer:'center',label:v[1],group:'live-json'})});
     store.lowers.forEach(function (l, i) {
       items.push({ id: 'lower:' + i, type: 'lower', layer: 'bottom', label: 'Подпись: ' + (l.name || '—'), group: 'lowers', idx: i });
     });
@@ -563,7 +582,7 @@
       title: t.title != null && t.title !== '' ? t.title : ((fg || live) ? raw.title : item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
       subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : ((fg || live) ? raw.subtitle : sheetSubtitle(s)), emptyText: raw.emptyText,
       team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages,
-      pos: { h: t.posH || (live && item.liveType === 'side' ? 'l' : 'c'), v: t.posV || 'c', scale: +t.scale || (live && item.liveType === 'side' ? 55 : 100) }
+      pos: { h: t.posH || 'c', v: t.posV || 'c', scale: +t.scale || 100 }
     };
   }
 
@@ -574,6 +593,7 @@
     if (item.type === 'lower') return clone(store.lowers[item.idx] || {});
     if (item.type === 'logos') return { items: (store.logos.items || []).map(function (l) { return { src: l.src, scale: (l.scale || 100) / 100 }; }), interval: +store.logos.interval || 5, plate: store.logos.plate || 'white' };
     if (item.type === 'table') return tablePayload(item);
+    if (item.type === 'raceHeader') return raceHeaderPayload();
     if (item.type === 'pcard') {
       if (!store.fgdr.pilot) return null;
       var cd = CG.FGDR.card(FG, store.fgdr.pilot, item.id === 'p:card' ? 'card' : store.fgdr.liveDisc);
@@ -633,7 +653,10 @@
       var cur = state[L]; if (!cur) return;
       var item = itemById(cur.key); if (!item) return;
       var d = payloadFor(item); if (!d) return;
-      if (JSON.stringify(d) !== JSON.stringify(cur.data)) { cur.data = d; cur.label = itemLabel(item); changed = true; }
+      if (cur.type !== item.type || JSON.stringify(d) !== JSON.stringify(cur.data)) {
+        state[L] = Object.assign({}, cur, { type: item.type, data: d, label: itemLabel(item) });
+        changed = true;
+      }
     });
     if (changed) sendState();
   }
@@ -795,6 +818,11 @@
     } else if (item.type === 'logos') { retrimOld(); renderLogosEditor(ed); }
     else if (item.type === 'pcard') renderCardEditor(ed, item);
     else if (item.type === 'table') renderTableEditor(ed, item);
+    else if (item.type === 'raceHeader') {
+      ed.innerHTML = '<h3>' + esc(item.label) + '</h3><div class="hint">' +
+        (liveJson ? 'Счётчики и время обновляются из JSON гонки. Порядок карточек соответствует номерам пилотов.' : 'Ожидаем JSON гонки.') +
+        '</div>';
+    }
     renderOnAir();
   }
   function bindFields(ed, obj) {

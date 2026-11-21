@@ -228,3 +228,76 @@ body.checker{background:#0b0f18 repeating-conic-gradient(#121826 0 25%,#0b0f18 0
 .pcard .place b{text-shadow:3px 3px 0 rgba(38,8,105,.25)}
 .pcard .total b{text-shadow:3px 3px 0 var(--p900)}
 .pcard .bar{position:absolute;left:170px;top:184px;width:300px;height:6px;background:var(--cyan);transform-origin:left}
+
+/* LIVE JSON · верхние карточки пилотов */
+.race-header {
+  position:absolute;
+  top:34px;
+  left:48px;
+  right:48px;
+}
+.race-header-banner {
+  height:58px;
+  padding:6px 24px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  background:linear-gradient(100deg,#291451,#502f91);
+  border:1px solid #8056c2;
+  border-radius:16px;
+}
+.race-header-banner img {display:block;height:44px;width:auto}
+.race-header-clock {font-family:var(--font-head);font-size:25px;white-space:nowrap}
+.race-header-cards {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+  margin-top:10px;
+}
+.race-header-card {
+  --pilot-color:#ff647d;
+  min-width:0;
+  padding:15px 17px 17px;
+  border:1px solid #594481;
+  border-left:5px solid var(--pilot-color);
+  border-radius:16px;
+  background:linear-gradient(105deg,#24183c,#392b57);
+}
+.race-header-card:nth-child(2) {--pilot-color:#ffda62}
+.race-header-card:nth-child(3) {--pilot-color:#57e5b1}
+.race-header-card:nth-child(4) {--pilot-color:#67afff}
+.race-header-pilot {display:flex;align-items:center;gap:11px;margin-bottom:13px}
+.race-header-number {
+  flex:none;
+  display:grid;
+  place-items:center;
+  width:42px;
+  height:44px;
+  border-radius:10px;
+  color:#170e27;
+  background:var(--pilot-color);
+  font-family:var(--font-head);
+  font-size:22px;
+}
+.race-header-name {
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:29px;
+  font-weight:800;
+}
+.race-header-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.race-header-stage {color:#d2c1eb;font-size:15px;font-weight:800}
+.race-header-metric b {display:block;margin-top:3px;font-size:25px;font-variant-numeric:tabular-nums}
+.race-header-track {height:6px;margin-top:7px;background:#ffffff20;border-radius:4px;overflow:hidden}
+.race-header-track span {
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,var(--p500),var(--pilot-color));
+  transform:scaleX(0);
+  transform-origin:left center;
+  transition:transform .3s ease-out;
+}
