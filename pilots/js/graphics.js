@@ -189,7 +189,13 @@
     this.root.querySelector('.name').innerHTML = nameHTML(d.name);
     this.root.querySelector('.role').textContent = d.role || '';
     this.root.querySelector('.role').style.display = d.role ? '' : 'none';
-    var self = this; fontsReady.then(function () { fit(self.root.querySelector('.name'), 0.55); fit(self.root.querySelector('.role'), 0.6); });
+    var self = this, role = this.root.querySelector('.role');
+    role.classList.remove('two'); role.style.fontSize = '';
+    fontsReady.then(function () {
+      fit(self.root.querySelector('.name'), 0.55);
+      // длинные регалии: переносим во вторую строку, а не ужимаем до мелкого шрифта
+      if (role.scrollWidth > role.clientWidth + 1) { role.classList.add('two'); if (role.scrollHeight > role.clientHeight + 2) fit(role, 0.8); }
+    });
   };
   LowerGfx.prototype.update = function (d) { this.set(d); return Promise.resolve(); };
   LowerGfx.prototype.in = function () {

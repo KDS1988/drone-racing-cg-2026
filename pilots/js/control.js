@@ -45,6 +45,18 @@
     if (!store.config.sheets.some(function (s) { return s.key === d.key; })) store.config.sheets.push(clone(d));
   });
   if (!store.collapsed) store.collapsed = {};
+  // подписи из сценария (js/lowers-preset.js): добавляем один раз, не дублируя и не трогая уже внесённые вручную
+  (function () {
+    var P = window.CG_LOWERS_PRESET;
+    if (!P || store.lowersPreset === P.ver) return;
+    var key = function (l) { return String(l.name || '').trim().toLowerCase() + '|' + String(l.role || '').trim().toLowerCase(); };
+    // заготовки «Имя ФАМИЛИЯ» без изменений убираем
+    store.lowers = (store.lowers || []).filter(function (l) { return String(l.name || '').trim() !== 'Имя ФАМИЛИЯ'; });
+    var have = {}; store.lowers.forEach(function (l) { have[key(l)] = 1; });
+    P.items.forEach(function (l) { if (!have[key(l)]) { store.lowers.push({ name: l.name, role: l.role }); have[key(l)] = 1; } });
+    store.lowersPreset = P.ver;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {}
+  })();
   store.fgdr = Object.assign({ pilot: '', region: '', teamN: 3, liveDisc: 'race75' }, store.fgdr || {});
   if (!store.config.fgdrBase) store.config.fgdrBase = CG.DEFAULT_CONFIG.fgdrBase;
   if (!store.logos || !Array.isArray(store.logos.items)) store.logos = { items: [], interval: 5, plate: 'white' };
