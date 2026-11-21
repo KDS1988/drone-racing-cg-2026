@@ -29,7 +29,6 @@
       <option value="file">Файл Excel (без интернета)</option>
     </select>
     <label class="btn" id="btnFile" hidden title="Выгрузка судейской таблицы: Файл → Скачать → Microsoft Excel (.xlsx)">📂 Загрузить .xlsx<input type="file" id="xlsxIn" accept=".xlsx,.xls,.ods" hidden></label>
-    <a class="btn" href="hud-control.html" target="_blank" rel="noopener" title="Шесть HUD: PREVIEW и PROGRAM">HUD · 6 ИСТОЧНИКОВ</a>
     <a class="btn" href="race-live.html" target="_blank" rel="noopener" title="Данные sf.fgdrrace.ru/api: рейтинг, этапы и отметки">LIVE API · ГОНКА</a>
     <button class="btn" id="btnReload" title="Перечитать таблицу сейчас">⟳ Обновить</button>
     <button class="btn" id="btnSettings">⚙ Настройки</button>
@@ -104,7 +103,6 @@
 <script src="js/core.js?v=20261121b"></script>
 <script src="js/lowers-preset.js?v=20261121b"></script>
 <script src="js/fgdr.js?v=20261121b"></script>
-<script src="js/control.js?v=20261121proxy1"></script>
 <script>
 (function(){
   var pill=document.getElementById('liveJsonStatus');
@@ -116,14 +114,8 @@
       pill.className='pill bad';
     }
   });
-  setTimeout(function(){
-    if(/загрузка|запрос/.test(pill.textContent.toLowerCase())){
-      pill.textContent='JSON: ТАЙМАУТ';
-      pill.title='Пульт не завершил загрузку. Проверьте консоль браузера (F12).';
-      pill.className='pill bad';
-    }
-  },12000);
 })();
 </script>
+<script src="js/control.js?v=20261121proxy2"></script>
 </body>
 </html>

@@ -324,7 +324,7 @@
   function pilotsIn(b) { return b.rows.filter(function (r) { return r.pilotsRaw.length; }).length; }
   /* Live JSON гонки: отдельный источник, не смешивается с протоколами FGDR. */
   var LIVE_TYPES=[['all','Общий прогресс'],['sim','Технический симулятор'],['basket','Дрон-баскетбол'],['race','Гонка 75 мм'],['results','Итоговые результаты'],['side','Боковой виджет']];
-  var liveJson=null,liveError='',liveBusy=false,liveRevision=null;
+  var liveJson=null,liveError='',liveAt=0,liveLoadId=0,liveBusy=false;
   function liveFmt(v){if(v==null||!isFinite(+v))return '—';v=Math.max(0,+v);return Math.floor(v/60000)+':'+String(Math.floor(v%60000/1000)).padStart(2,'0')+'.'+String(Math.floor(v%1000)).padStart(3,'0')}
   function liveTable(item){
     var d=liveJson;if(!d||!Array.isArray(d.players))return null;
@@ -344,34 +344,61 @@
     });
     return {title:item.label,subtitle:'ПИЛОТЫ БУДУЩЕГО · LIVE API',columns:cols,rows:rows,defaultHidden:{},page:0,pages:1,pos:{h:side?'l':'c',v:'c',scale:side?55:100}};
   }
-  function liveAccept(d){
-    if(!d||!Array.isArray(d.players))throw Error('Неверный JSON: отсутствует массив players');
-    if(!Array.isArray(d.ranking))d.ranking=d.players.map(function(p){return p.id});
-    liveError='';var changed=JSON.stringify(d)!==JSON.stringify(liveJson);liveJson=d;liveRevision=d.revision;
-    if(changed){try{refreshOnAir();updatePreview(false)}catch(e){console.error('Live graphics refresh:',e)}}
+  function liveAccept(d) {
+    if (!Array.isArray(d.ranking)) d.ranking = d.players.map(function (p) { return p.id; });
+    var first = !liveJson, changed = first || d.revision == null || d.revision !== liveJson.revision;
+    liveJson = d;
+    liveAt = Date.now();
+    if (changed) { refreshOnAir(); updatePreview(false); }
+    var selected = itemById(store.selected);
+    if (first && selected && selected.kind === 'live') renderEditor();
   }
-  function liveLoad(){
-    if(liveBusy)return;liveBusy=true;
-    var configuredProxy=(localStorage.getItem('cg-race-proxy-url')||'').trim();
-    var sources=configuredProxy?[configuredProxy,'https://sf.fgdrrace.ru/api']:['https://sf.fgdrrace.ru/api'];
-    if(!/github[.]io$/i.test(location.hostname))sources.push('../api/race');
-    function trySource(n){
-      return fetch(sources[n],{cache:'no-store'}).then(function(r){if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).catch(function(e){
-        if(n+1<sources.length)return trySource(n+1).catch(function(nextErr){throw Error('Прямой API: '+((e&&e.message)||e)+'; прокси: '+((nextErr&&nextErr.message)||nextErr));});
-        throw e;
-      });
-    }
-    var el0=document.getElementById('liveJsonStatus');if(el0){el0.textContent='JSON: запрос…';el0.title='Получаем данные гонки';}
-    trySource(0).then(liveAccept).catch(function(e){liveError=(e&&e.message)||String(e)}).then(function(){liveBusy=false;
-      var el=document.getElementById('liveJsonStatus');if(el){
-        el.textContent=liveError?'JSON: ОШИБКА':'JSON: '+(liveRevision==null?'OK':'v'+liveRevision);
-        el.title=liveError?'Не удалось получить https://sf.fgdrrace.ru/api. Возможна блокировка CORS. '+liveError:'Данные отдельного API гонки получены';
-        el.className='pill '+(liveError?'bad':'ok');
-        var detail=document.getElementById('liveJsonDetail');
-        if(detail){detail.hidden=!liveError;detail.textContent=liveError?'API гонки: '+liveError+' — прямой доступ из GitHub Pages может блокироваться CORS. Для эфира нужен CORS на API или серверный прокси.':'';}
 
+  async function liveLoad() {
+    if (liveBusy) return;
+    liveBusy = true;
+    var id = ++liveLoadId;
+    var proxy = (localStorage.getItem('cg-race-proxy-url') || '').trim();
+    var sources = [];
+    if (proxy) sources.push({ url: proxy, label: 'HTTPS-прокси' });
+    sources.push({ url: 'https://sf.fgdrrace.ru/api', label: 'Прямой API' });
+    if (!/github[.]io$/i.test(location.hostname)) sources.push({ url: '../api/race', label: 'Локальный прокси' });
+
+    var errors = [], data = null;
+    for (var source of sources) {
+      var controller = new AbortController();
+      var timeout = setTimeout(function () { controller.abort(); }, 8000);
+      try {
+        var response = await fetch(source.url, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw Error('HTTP ' + response.status);
+        data = await response.json();
+        if (!data || !Array.isArray(data.players)) {
+          data = null;
+          throw Error('отсутствует массив players');
+        }
+        break;
+      } catch (e) {
+        errors.push(source.label + ': ' + (controller.signal.aborted ? 'истекло время ожидания' : e.message));
+      } finally {
+        clearTimeout(timeout);
       }
-    });
+      if (id !== liveLoadId) return;
+    }
+    if (id !== liveLoadId) return;
+    liveBusy = false;
+    liveError = data ? '' : errors.join(' · ');
+    if (data) liveAccept(data);
+
+    var status = $('#liveJsonStatus'), detail = $('#liveJsonDetail');
+    if (status) {
+      status.textContent = liveError ? 'JSON: ОШИБКА' : 'JSON: ' + (data.revision == null ? 'OK' : 'v' + data.revision);
+      status.title = liveError || 'Данные получены · ' + source.label;
+      status.className = 'pill ' + (liveError ? 'bad' : 'ok');
+    }
+    if (detail) {
+      detail.hidden = !liveError;
+      detail.textContent = liveError ? 'API гонки · ' + liveError : '';
+    }
   }
 
   function catalog() {
@@ -979,18 +1006,21 @@
   }
 
   function renderTableEditor(ed, item) {
-    var s = sheetByKey(item.sheet), d = item.kind === 'live' ? {at:liveJson ? Date.now():0,err:liveError} : item.kind === 'fgdr' ? fgState(item.need) : (DATA[item.sheet] || {}), t = tcfg(item.id);
+    var s = sheetByKey(item.sheet), d = item.kind === 'live' ? {at:liveAt,err:liveError} : item.kind === 'fgdr' ? fgState(item.need) : (DATA[item.sheet] || {}), t = tcfg(item.id);
     var raw = rawTable(item);
     var head = '<h3>' + esc(item.kind === 'fgdr' ? itemLabel(item) : (s ? sheetGroupTitle(s) : '') + ' · ' + item.label) + ' <small>' +
       (d.err ? '⚠ ' + esc(d.err) : d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…') + '</small></h3>';
-    if (!raw) { ed.innerHTML = head + '<div class="hint">Данные листа ещё не загружены или блок не найден в таблице.</div>'; return; }
+    if (!raw) {
+      ed.innerHTML = head + '<div class="hint">' + (item.kind === 'live' ? 'Ожидаем JSON гонки.' : 'Данные листа ещё не загружены или блок не найден в таблице.') + '</div>';
+      return;
+    }
     var pl = tablePayload(item);
     var hiddenCols = t.hiddenCols || raw.defaultHidden || {};
     var html = head + fgTableOpts(item) + '<div class="fields">' +
       '<label>Заголовок<input data-t="title" value="' + esc(t.title || '') + '" placeholder="' + esc(pl.title) + '"></label>' +
       '<label>Подзаголовок<input data-t="subtitle" value="' + esc(t.subtitle || '') + '" placeholder="' + esc(pl.subtitle) + '"></label></div>';
     html += '<div class="opts">' +
-      '<div class="grpbox"><span class="lbl">Строк на стр.</span><input type="number" min="1" max="40" data-t="rpp" value="' + esc(t.rpp || (item.kind === 'fgdr' ? 15 : item.kind === 'quali' ? 16 : 24)) + '"></div>' +
+      '<div class="grpbox"><span class="lbl">Строк на стр.</span><input type="number" min="1" max="40" data-t="rpp" value="' + esc(t.rpp || (item.kind === 'fgdr' || item.kind === 'live' ? 15 : item.kind === 'quali' ? 16 : 24)) + '"></div>' +
       '<div class="grpbox"><span class="lbl">Страница</span><button class="btn sm" data-pg="-1">◀</button><b>' + (pl.page + 1) + ' / ' + pl.pages + '</b><button class="btn sm" data-pg="1">▶</button></div>' +
       '<div class="grpbox"><span class="lbl">Автолистание, сек</span><input type="number" min="0" max="120" data-t="flip" value="' + esc(t.flip || 0) + '"></div>' +
       '<div class="grpbox"><span class="lbl">Сортировка</span><select data-t="sort"><option value="">как в таблице</option>' +
@@ -1000,12 +1030,12 @@
       '<label class="chk"><input type="checkbox" data-t="hideEmpty"' + (t.hideEmpty ? ' checked' : '') + '>скрывать строки без пилота</label>' +
       '<label class="chk"><input type="checkbox" data-t="hideEmptyCols"' + (t.hideEmptyCols !== false ? ' checked' : '') + '>скрывать пустые колонки</label>' +
       '</div>';
-    var pbtn = function (k, val, txt, tip) { var cur = t[k] || 'c'; return '<button class="btn sm' + (cur === val ? ' on' : '') + '" data-pos="' + k + '" data-v="' + val + '" title="' + tip + '">' + txt + '</button>'; };
+    var pbtn = function (k, val, txt, tip) { var cur = k === 'posH' ? pl.pos.h : pl.pos.v; return '<button class="btn sm' + (cur === val ? ' on' : '') + '" data-pos="' + k + '" data-v="' + val + '" title="' + tip + '">' + txt + '</button>'; };
     html += '<div class="opts posopts"><span class="lbl">Положение в кадре:</span>' +
       '<div class="grpbox seg">' + pbtn('posH', 'l', '◧ слева', 'Прижать к левому краю') + pbtn('posH', 'c', '▣ центр', 'По центру') + pbtn('posH', 'r', 'справа ◨', 'Прижать к правому краю') + '</div>' +
       '<div class="grpbox seg">' + pbtn('posV', 't', '⬒ верх', 'Прижать к верху') + pbtn('posV', 'c', 'середина', 'По центру') + pbtn('posV', 'b', '⬓ низ', 'Прижать к низу') + '</div>' +
-      '<div class="grpbox"><span class="lbl">Масштаб</span><input type="range" min="50" max="100" step="5" id="tScale" value="' + esc(t.scale || 100) + '"><b id="tScaleV">' + esc(t.scale || 100) + '%</b></div>' +
-      '<button class="btn sm" id="posReset" title="Центр, 100%">сброс</button></div>';
+      '<div class="grpbox"><span class="lbl">Масштаб</span><input type="range" min="50" max="100" step="5" id="tScale" value="' + esc(pl.pos.scale) + '"><b id="tScaleV">' + esc(pl.pos.scale) + '%</b></div>' +
+      '<button class="btn sm" id="posReset" title="Вернуть исходное положение">сброс</button></div>';
     html += '<div class="opts"><span class="lbl">Колонки в эфире:</span>' + raw.columns.map(function (c) {
       var on = !hiddenCols[c.key];
       return '<label class="chk' + (on ? '' : ' off') + '"><input type="checkbox" data-col="' + c.key + '"' + (on ? ' checked' : '') + '>' + esc(c.label) + '</label>';
@@ -1063,7 +1093,7 @@
       bt.onclick = function () { t[bt.dataset.pos] = bt.dataset.v; onEdited(); renderEditor(); };
     });
     $('#tScale', ed).oninput = function () { t.scale = +this.value; $('#tScaleV', ed).textContent = this.value + '%'; onEdited(); };
-    $('#posReset', ed).onclick = function () { t.posH = 'c'; t.posV = 'c'; t.scale = 100; onEdited(); renderEditor(); };
+    $('#posReset', ed).onclick = function () { delete t.posH; delete t.posV; delete t.scale; onEdited(); renderEditor(); };
     $('#colsReset', ed).onclick = function () { t.hiddenCols = null; onEdited(); renderEditor(); };
     $$('[data-vis]', ed).forEach(function (inp) {
       inp.addEventListener('change', function () {
@@ -1234,7 +1264,9 @@
   if(proxySave)proxySave.addEventListener('click',function(){
     var url=(proxyInput.value||'').trim();
     if(url && !/^https:\/\/[^\s]+$/i.test(url)){alert('Нужен полный HTTPS-адрес прокси');return;}
-    localStorage.setItem('cg-race-proxy-url',url);liveJson=null;liveError='';liveBusy=false;liveLoad();
+    localStorage.setItem('cg-race-proxy-url',url);
+    liveBusy=false;
+    liveLoad();
   });
   liveLoad();setInterval(liveLoad,3000);
   try { reloadAll(); } catch (e) { console.error('Legacy source initialization:',e); }
