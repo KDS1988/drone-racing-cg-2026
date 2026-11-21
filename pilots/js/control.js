@@ -515,7 +515,7 @@
       title: t.title != null && t.title !== '' ? t.title : ((fg || live) ? raw.title : item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
       subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : ((fg || live) ? raw.subtitle : sheetSubtitle(s)), emptyText: raw.emptyText,
       team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages,
-      pos: { h: t.posH || 'c', v: t.posV || 'c', scale: +t.scale || 100 }
+      pos: { h: t.posH || (live && item.liveType === 'side' ? 'l' : 'c'), v: t.posV || 'c', scale: +t.scale || (live && item.liveType === 'side' ? 55 : 100) }
     };
   }
 
