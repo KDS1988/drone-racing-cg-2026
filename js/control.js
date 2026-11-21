@@ -65,6 +65,7 @@
   var DATA = {};  // key → { parsed, at, err, hash, busy, last }
   /** листы, которые показываются в пульте (включены в настройках; в демо — только те, для которых есть демо-файл) */
   function activeSheets() {
+    if (cfg.source === 'raceApi') return [];
     return cfg.sheets.filter(function (s) {
       if (s.on === false || !CG.sheetCsvUrl(cfg, s)) return false;
       if (cfg.source === 'file' && OFFLINE.fileName && offlineCsv(s) == null) return false; // листа нет в файле — не показываем
@@ -73,6 +74,36 @@
   }
   cfg.sheets.forEach(function (s) { DATA[s.key] = { parsed: null, at: 0, err: null, hash: '', busy: false, last: 0 }; });
   function sheetByKey(k) { return cfg.sheets.filter(function (s) { return s.key === k; })[0]; }
+
+  /* ---------- live API гонки: один JSON-снимок со всеми четырьмя пилотами ---------- */
+  var RACE = { data: null, at: 0, err: null, busy: false, last: 0, hash: '' };
+  function raceChanged() {
+    renderList();
+    refreshOnAir();
+    updatePreview(false);
+    if (String(store.selected || '').indexOf('race:') === 0 && !$('#editor').contains(document.activeElement)) renderEditor();
+  }
+  function raceRequest(url) {
+    return fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+  function loadRace(force) {
+    if (RACE.busy) return Promise.resolve();
+    RACE.busy = true; RACE.last = Date.now();
+    raceRequest(cfg.raceApiUrl || CG.DEFAULT_CONFIG.raceApiUrl).catch(function (e) {
+      if (bus && bus.mode === 'server') return raceRequest('api/race');
+      throw e;
+    }).then(function (j) {
+      if (!j || !Array.isArray(j.players)) throw new Error('API вернул неожиданный JSON: нет массива players');
+      RACE.err = null; RACE.at = Date.now();
+      var hash = JSON.stringify(j);
+      if (force || hash !== RACE.hash) { RACE.hash = hash; RACE.data = j; raceChanged(); }
+    }).catch(function (e) {
+      RACE.err = e && e.message ? e.message : String(e);
+    }).then(function () { RACE.busy = false; renderStatus(); });
+  }
 
   function hashStr(s) { var h = 0, i; for (i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h; }
 
@@ -152,6 +183,11 @@
     return hot;
   }
   function pollTick() {
+    if (cfg.source === 'raceApi') {
+      var raceIv = Math.max(500, Math.min(10000, +cfg.racePollMs || 1000));
+      if (!RACE.busy && Date.now() - RACE.last >= raceIv) loadRace(false);
+      return;
+    }
     var now = Date.now(), hot = hotSheets();
     activeSheets().forEach(function (s) {
       var d = DATA[s.key];
@@ -159,7 +195,10 @@
       if (!d.busy && now - d.last >= iv) loadSheet(s);
     });
   }
-  function reloadAll() { activeSheets().forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); }); }
+  function reloadAll() {
+    if (cfg.source === 'raceApi') { RACE.hash = ''; loadRace(true); return; }
+    activeSheets().forEach(function (s) { DATA[s.key].hash = ''; loadSheet(s); });
+  }
 
   /* =================================================================== */
   /* Каталог титров                                                      */
@@ -185,6 +224,7 @@
     store.lowers.forEach(function (l, i) {
       items.push({ id: 'lower:' + i, type: 'lower', layer: 'bottom', label: 'Подпись: ' + (l.name || '—'), group: 'lowers', idx: i });
     });
+    if (cfg.source === 'raceApi' && CG.RACE) items = items.concat(CG.RACE.catalog(RACE.data));
     activeSheets().forEach(function (s) {
       var p = DATA[s.key].parsed;
       if (!p) return;
@@ -228,6 +268,7 @@
 
   /** «сырой» вид таблицы: все колонки, все строки, значения из листа */
   function rawTable(item) {
+    if (item.kind === 'race' && CG.RACE) return CG.RACE.table(RACE.data, item.id);
     var s = sheetByKey(item.sheet), p = DATA[item.sheet] && DATA[item.sheet].parsed;
     if (!s || !p) return null;
     var known = p.known, team = p.mode === 'team';
@@ -289,7 +330,7 @@
   /** данные для графики (с правками, скрытием, сортировкой, страницами) */
   function tablePayload(item) {
     var raw = rawTable(item), t = tcfg(item.id), s = sheetByKey(item.sheet);
-    if (!raw || !s) return null;
+    if (!raw || (!s && item.kind !== 'race')) return null;
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
     var pilotKey = (raw.columns.filter(function (c) { return c.role === 'pilot'; })[0] || {}).key;
     var placeKeys = raw.columns.filter(function (c) { return CG.low(c.label) === 'место'; }).map(function (c) { return c.key; });
@@ -329,8 +370,8 @@
       return { id: r.id, cells: cells, hl: r.hl || 0 };
     });
     return {
-      title: t.title != null && t.title !== '' ? t.title : (item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа')),
-      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : sheetSubtitle(s),
+      title: t.title != null && t.title !== '' ? t.title : (item.kind === 'race' ? raw.title : (item.kind === 'quali' ? 'Общая таблица' : CG.cap(raw.title.toLowerCase()).replace(/группа/g, 'группа'))),
+      subtitle: t.subtitle != null && t.subtitle !== '' ? t.subtitle : (s ? sheetSubtitle(s) : (raw.subtitle || '')),
       team: raw.team, columns: cols, rows: pageRows, page: page, pages: pages,
       pos: { h: t.posH || 'c', v: t.posV || 'c', scale: +t.scale || 100 }
     };
@@ -432,6 +473,14 @@
   /* Рендер: статус                                                      */
   /* =================================================================== */
   function renderStatus() {
+    if (cfg.source === 'raceApi') {
+      var rp = $('#pData');
+      if (RACE.err) { rp.className = 'pill bad'; rp.textContent = 'ДАННЫЕ: API · ОШИБКА'; rp.title = RACE.err; }
+      else if (RACE.data) { rp.className = 'pill ok'; rp.textContent = 'ДАННЫЕ: API · ' + new Date(RACE.at).toLocaleTimeString('ru-RU'); rp.title = 'revision: ' + RACE.data.revision + ' · статус: ' + RACE.data.status; }
+      else { rp.className = 'pill warn'; rp.textContent = 'ДАННЫЕ: ОЖИДАНИЕ API…'; rp.title = cfg.raceApiUrl || ''; }
+      $('#pDemo').hidden = true;
+      return;
+    }
     var errs = [], newest = 0, loaded = 0;
     activeSheets().forEach(function (s) {
       var d = DATA[s.key];
@@ -468,9 +517,11 @@
   function renderList() {
     ITEMS = catalog();
     var html = '';
-    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(activeSheets().map(function (s) {
-      return { k: s.key, t: sheetGroupTitle(s), sheet: true };
-    }));
+    var groups = [{ k: 'common', t: 'Общие' }, { k: 'lowers', t: 'Нижние подписи' }].concat(
+      cfg.source === 'raceApi' ? [{ k: 'race', t: 'Живая гонка' }] : activeSheets().map(function (s) {
+        return { k: s.key, t: sheetGroupTitle(s), sheet: true };
+      })
+    );
     groups.forEach(function (g) {
       var its = ITEMS.filter(function (i) { return i.group === g.k; });
       var collapsed = !!store.collapsed[g.k];
@@ -479,6 +530,7 @@
         esc(g.t) + (hasAir ? ' <b class="airdot">●</b>' : '') + (g.sheet ? '<span class="st" data-k="' + g.k + '">…</span>' : '') + '</h4>';
       if (collapsed) { html += '</div>'; return; }
       if (g.k === 'lowers' && !its.length) html += '<div class="hint">Добавьте подписи в редакторе</div>';
+      if (g.k === 'race' && !its.length) html += '<div class="hint">Загрузка данных гонки…</div>';
       if (g.sheet && !its.length) html += '<div class="hint">' + (DATA[g.k].parsed ? 'Пока нет заполненных таблиц' : 'загрузка…') + '</div>';
       its.forEach(function (it) {
         var air = isOnAir(it.id);
@@ -508,6 +560,7 @@
     renderList(); renderEditor(); updatePreview(true);
     var it = itemById(id);
     if (it && it.sheet) loadSheet(sheetByKey(it.sheet));
+    else if (it && it.kind === 'race') loadRace(false);
   }
 
   function renderOnAir() {
@@ -762,8 +815,10 @@
   function renderTableEditor(ed, item) {
     var s = sheetByKey(item.sheet), d = DATA[item.sheet], t = tcfg(item.id);
     var raw = rawTable(item);
-    var head = '<h3>' + esc(s ? sheetGroupTitle(s) : '') + ' · ' + esc(item.label) + ' <small>' +
-      (d.err ? '⚠ ' + esc(d.err) : d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…') + '</small></h3>';
+    var stamp = item.kind === 'race'
+      ? (RACE.err ? '⚠ ' + RACE.err : RACE.at ? 'API · ' + new Date(RACE.at).toLocaleTimeString('ru-RU') : 'ожидание API…')
+      : (d && d.err ? '⚠ ' + d.err : d && d.at ? 'обновлено ' + new Date(d.at).toLocaleTimeString('ru-RU') : 'загрузка…');
+    var head = '<h3>' + (s ? esc(sheetGroupTitle(s)) + ' · ' : '') + esc(item.label) + ' <small>' + esc(stamp) + '</small></h3>;
     if (!raw) { ed.innerHTML = head + '<div class="hint">Данные листа ещё не загружены или блок не найден в таблице.</div>'; return; }
     var pl = tablePayload(item);
     var hiddenCols = t.hiddenCols || raw.defaultHidden;
@@ -924,6 +979,8 @@
   var modal = $('#settings');
   $('#btnSettings').onclick = function () {
     $('#sSheetId').value = cfg.sheetId;
+    $('#sRaceApiUrl').value = cfg.raceApiUrl || CG.DEFAULT_CONFIG.raceApiUrl;
+    $('#sRacePollMs').value = cfg.racePollMs || 1000;
     $('#sPollA').value = cfg.pollActive; $('#sPollB').value = cfg.pollAll;
     $('#sTransport').value = cfg.transport; $('#sFbUrl').value = cfg.fbUrl || ''; $('#sRoom').value = cfg.room || '';
     $('#sVmixUrl').value = graphicsUrl();
@@ -937,6 +994,9 @@
   $('#sSave').onclick = function () {
     var m = /\/d\/([\w-]+)/.exec($('#sSheetId').value); // можно вставить всю ссылку
     cfg.sheetId = m ? m[1] : $('#sSheetId').value.trim();
+    cfg.raceApiUrl = $('#sRaceApiUrl').value.trim() || CG.DEFAULT_CONFIG.raceApiUrl;
+    if (!/^https?:\/\//i.test(cfg.raceApiUrl)) { toast('Укажите корректный URL API', true); return; }
+    cfg.racePollMs = Math.max(500, Math.min(10000, +$('#sRacePollMs').value || 1000));
     cfg.pollActive = Math.max(1, +$('#sPollA').value || 3);
     cfg.pollAll = Math.max(5, +$('#sPollB').value || 30);
     $$('[data-gid]').forEach(function (inp) { cfg.sheets[+inp.dataset.gid].gid = inp.value.replace(/\D/g, ''); });
